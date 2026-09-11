@@ -1,0 +1,15 @@
+export enum ChannelType {
+  WHATSAPP = 'WHATSAPP',
+  TELEGRAM = 'TELEGRAM',
+  FACEBOOK_MESSENGER = 'FACEBOOK_MESSENGER',
+  INSTAGRAM = 'INSTAGRAM',
+  X = 'X',
+  TIKTOK = 'TIKTOK',
+}
+
+export enum ChannelConnectionStatus {
+  CONNECTED = 'CONNECTED',
+  DISCONNECTED = 'DISCONNECTED',
+  ERROR = 'ERROR',
+  PENDING = 'PENDING',
+}
