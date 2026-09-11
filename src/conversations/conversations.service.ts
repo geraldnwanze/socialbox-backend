@@ -135,7 +135,13 @@ export class ConversationsService {
   ): Promise<Conversation> {
     const conversation = await this.conversations.findOne({
       where: { id, workspaceId },
-      relations: ['contact', 'channelConnection', 'assignee', 'assignee.user'],
+      relations: [
+        'contact',
+        'contact.identities',
+        'channelConnection',
+        'assignee',
+        'assignee.user',
+      ],
     });
     if (!conversation) throw new ResourceNotFoundException('Conversation');
     return conversation;

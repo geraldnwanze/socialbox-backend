@@ -137,6 +137,18 @@ export class ConversationsController {
     });
   }
 
+  @Get(':id/tags')
+  async listTags(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @Param('id') id: string,
+  ) {
+    await this.conversationsService.findOneForWorkspace(
+      workspace.workspaceId,
+      id,
+    );
+    return this.tagsService.listForConversation(id);
+  }
+
   @Post(':id/tags/:tagId')
   async addTag(
     @CurrentWorkspace() workspace: WorkspaceContext,

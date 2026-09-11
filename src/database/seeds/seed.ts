@@ -31,32 +31,52 @@ async function seed() {
 
   const passwordHash = await bcrypt.hash('password123', 12);
 
-  let owner = await users.findOne({ where: { email: 'owner@demo.socialbox.local' } });
+  let owner = await users.findOne({
+    where: { email: 'owner@demo.socialbox.local' },
+  });
   if (!owner) {
     owner = await users.save(
-      users.create({ email: 'owner@demo.socialbox.local', passwordHash, fullName: 'Demo Owner' }),
+      users.create({
+        email: 'owner@demo.socialbox.local',
+        passwordHash,
+        fullName: 'Demo Owner',
+      }),
     );
     console.log('Created demo owner: owner@demo.socialbox.local / password123');
   }
 
-  let agent = await users.findOne({ where: { email: 'agent@demo.socialbox.local' } });
+  let agent = await users.findOne({
+    where: { email: 'agent@demo.socialbox.local' },
+  });
   if (!agent) {
     agent = await users.save(
-      users.create({ email: 'agent@demo.socialbox.local', passwordHash, fullName: 'Demo Agent' }),
+      users.create({
+        email: 'agent@demo.socialbox.local',
+        passwordHash,
+        fullName: 'Demo Agent',
+      }),
     );
     console.log('Created demo agent: agent@demo.socialbox.local / password123');
   }
 
-  let workspace = await workspaces.findOne({ where: { slug: 'demo-workspace' } });
+  let workspace = await workspaces.findOne({
+    where: { slug: 'demo-workspace' },
+  });
   if (!workspace) {
-    workspace = await workspaces.save(workspaces.create({ name: 'Demo Workspace', slug: 'demo-workspace' }));
+    workspace = await workspaces.save(
+      workspaces.create({ name: 'Demo Workspace', slug: 'demo-workspace' }),
+    );
     console.log(`Created demo workspace: ${workspace.id}`);
   }
 
   const ensureMember = async (userId: string, role: WorkspaceRole) => {
-    const existing = await members.findOne({ where: { workspaceId: workspace!.id, userId } });
+    const existing = await members.findOne({
+      where: { workspaceId: workspace!.id, userId },
+    });
     if (!existing) {
-      await members.save(members.create({ workspaceId: workspace!.id, userId, role }));
+      await members.save(
+        members.create({ workspaceId: workspace!.id, userId, role }),
+      );
     }
   };
   await ensureMember(owner.id, WorkspaceRole.OWNER);
@@ -71,7 +91,9 @@ async function seed() {
     { name: 'Follow-up', color: '#6366F1' },
   ];
   for (const tag of defaultTags) {
-    const existing = await tags.findOne({ where: { workspaceId: workspace.id, name: tag.name } });
+    const existing = await tags.findOne({
+      where: { workspaceId: workspace.id, name: tag.name },
+    });
     if (!existing) {
       await tags.save(tags.create({ workspaceId: workspace.id, ...tag }));
     }
