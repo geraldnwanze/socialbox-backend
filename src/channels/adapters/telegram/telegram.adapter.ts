@@ -93,6 +93,11 @@ export class TelegramAdapter implements ChannelAdapter {
     const botToken = connection.credentials?.botToken as string;
     const secret = this.configService.get<string>('telegram.webhookSecret');
     const apiUrl = this.configService.get<string>('apiUrl');
+    if (!apiUrl?.startsWith('https://')) {
+      throw new MessageSendFailedException(
+        'Telegram requires a public HTTPS webhook URL. Set API_URL to an HTTPS address (e.g. an ngrok tunnel) and restart the API.',
+      );
+    }
     const webhookUrl = `${apiUrl}/webhooks/telegram/${connection.id}`;
 
     const response = await fetch(`${this.apiBase(botToken)}/setWebhook`, {

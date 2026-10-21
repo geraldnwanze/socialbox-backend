@@ -36,6 +36,12 @@ services:
       REDIS_URL: redis://redis:6379
     ports:
       - '3001:3001'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3001/health/ready || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,6 +57,8 @@ services:
       DATABASE_URL: postgres://socialbox:socialbox@postgres:5432/socialbox
       REDIS_URL: redis://redis:6379
     depends_on:
+      api:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:

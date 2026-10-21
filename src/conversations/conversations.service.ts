@@ -254,6 +254,20 @@ export class ConversationsService {
     );
   }
 
+  /** Parks a conversation as "waiting" (on the customer or an internal follow-up). A new inbound
+   *  message flips it back to OPEN automatically (see recordInboundMessage). */
+  async markPending(
+    workspaceId: string,
+    conversationId: string,
+  ): Promise<Conversation> {
+    return this.setStatus(
+      workspaceId,
+      conversationId,
+      ConversationStatus.PENDING,
+      RealtimeEvent.CONVERSATION_UPDATED,
+    );
+  }
+
   async reopen(
     workspaceId: string,
     conversationId: string,

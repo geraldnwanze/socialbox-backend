@@ -6,6 +6,8 @@ import helmet from 'helmet';
 import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { RedisIoAdapter } from './realtime/redis-io.adapter';
+import { REDIS_CLIENT } from './redis/redis.module';
 
 async function bootstrap() {
   if (process.env.SENTRY_DSN) {
@@ -20,6 +22,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
   const configService = app.get(ConfigService);
 
+  app.useWebSocketAdapter(new RedisIoAdapter(app, app.get(REDIS_CLIENT)));
   app.use(helmet());
   app.use(new RequestIdMiddleware().use);
   app.enableCors({

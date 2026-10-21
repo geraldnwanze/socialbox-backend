@@ -91,6 +91,14 @@ export class ConversationsController {
     return this.conversationsService.resolve(workspace.workspaceId, id);
   }
 
+  @Post(':id/pending')
+  markPending(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @Param('id') id: string,
+  ) {
+    return this.conversationsService.markPending(workspace.workspaceId, id);
+  }
+
   @Post(':id/reopen')
   reopen(
     @CurrentWorkspace() workspace: WorkspaceContext,

@@ -36,7 +36,7 @@ import { NotificationProcessor } from './queue/processors/notification.processor
       load: [configuration],
       validate: validateEnv,
     }),
-    DatabaseModule,
+    DatabaseModule.forRoot({ runMigrations: false }),
     RedisModule,
     QueueModule,
     TypeOrmModule.forFeature([

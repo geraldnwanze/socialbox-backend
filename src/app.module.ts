@@ -30,7 +30,7 @@ import { HealthModule } from './health/health.module';
       validate: validateEnv,
     }),
     ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 120 }] }),
-    DatabaseModule,
+    DatabaseModule.forRoot({ runMigrations: true }),
     RedisModule,
     QueueModule,
     HealthModule,
