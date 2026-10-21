@@ -536,7 +536,7 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
         .expect(401);
     });
 
-    it('only lets agents of the same workspace signal typing', async () => {
+    it('only lets agents of the same workspace signal presence and typing', async () => {
       const conn = await db
         .getRepository(ChannelConnection)
         .findOneByOrFail({ externalAccountId: widgetKey });
@@ -549,13 +549,16 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
         contactId: contact.id,
         externalConversationId: 'typing-visitor',
       });
-      await api()
-        .post(`/conversations/${conversation.id}/typing`)
+      const res = await api()
+        .post(`/conversations/${conversation.id}/presence`)
         .set(as(agent))
-        .expect(204);
+        .send({ typing: true })
+        .expect(201);
+      expect(res.body.viewers).toMatchObject([{ name: 'agent', typing: true }]);
       await api()
-        .post(`/conversations/${conversation.id}/typing`)
+        .post(`/conversations/${conversation.id}/presence`)
         .set(as(outsider, otherWs))
+        .send({})
         .expect(404);
     });
   });
@@ -667,6 +670,61 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
         .set(as(outsider, otherWs))
         .send({ read: true })
         .expect(404);
+    });
+  });
+
+  describe('collision detection (presence)', () => {
+    it('shows teammates who has a conversation open, and removes them when they leave', async () => {
+      const conn = await db.getRepository(ChannelConnection).save({
+        workspaceId: ws,
+        type: ChannelType.TELEGRAM,
+        provider: 'TelegramAdapter',
+        status: ChannelConnectionStatus.CONNECTED,
+        externalAccountId: `bot-presence-${stamp}`,
+        metadata: {},
+      });
+      const contact = await db
+        .getRepository(Contact)
+        .save({ workspaceId: ws, displayName: 'Customer' });
+      const conversation = await db.getRepository(Conversation).save({
+        workspaceId: ws,
+        channelConnectionId: conn.id,
+        contactId: contact.id,
+        externalConversationId: `presence-${stamp}`,
+      });
+      const url = `/conversations/${conversation.id}/presence`;
+
+      await api().post(url).set(as(owner)).send({}).expect(201);
+      const both = await api()
+        .post(url)
+        .set(as(agent))
+        .send({ typing: true })
+        .expect(201);
+      expect(
+        both.body.viewers
+          .map((v: { name: string; typing: boolean }) => [v.name, v.typing])
+          .sort(),
+      ).toEqual([
+        ['agent', true],
+        ['owner', false],
+      ]);
+
+      await api().delete(url).set(as(agent)).expect(204);
+      const after = await api().post(url).set(as(owner)).send({}).expect(201);
+      expect(after.body.viewers.map((v: { name: string }) => v.name)).toEqual([
+        'owner',
+      ]);
+
+      await api()
+        .post(url)
+        .set(as(owner))
+        .send({ typing: 'false' })
+        .expect(400);
+      await api()
+        .post('/conversations/not-a-uuid/presence')
+        .set(as(owner))
+        .send({})
+        .expect(400);
     });
   });
 });

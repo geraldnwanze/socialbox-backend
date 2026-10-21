@@ -8,6 +8,7 @@ export enum RealtimeEvent {
   MESSAGE_STATUS_CHANGED = 'message.status_changed',
   NOTIFICATION_CREATED = 'notification.created',
   CONVERSATION_TYPING = 'conversation.typing',
+  CONVERSATION_PRESENCE = 'conversation.presence',
 }
 
 export const workspaceRoom = (workspaceId: string) =>

@@ -316,6 +316,12 @@ checked when the job runs, so turning it off also stops receipts that were alrea
   channel identity, and all their conversations. Admins can **merge** a duplicate into a contact (moves
   identities and conversations, fills blanks, then deletes the duplicate). Merging is always manual —
   contacts are never auto-matched across channels.
+- **Collision detection**: agents see who else has a conversation open ("Ann Lee is also viewing…", initials
+  on the conversation list) and an amber warning while someone is typing a reply, so two people don't answer
+  the same customer. Each open conversation pings `POST /conversations/:id/presence` every 15s (and while
+  typing); state lives in short-lived Redis keys, is broadcast to the workspace over the realtime socket,
+  and expires on its own if a tab closes (30s) — closing the conversation clears it immediately. It's a
+  heads-up, not a lock: nothing stops a second reply. It also drives the live chat visitor's "Typing…".
 - **Analytics** (admins/owners): conversations started per day, first-response time (median/average/p90),
   resolution time, and breakdowns by channel and agent for 7/30/90 days. Times are wall-clock (no
   business hours), days are UTC, and only a human agent's first reply counts. Resolution time relies on
