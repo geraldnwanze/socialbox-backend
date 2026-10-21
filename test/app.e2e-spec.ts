@@ -17,6 +17,8 @@ describe('App (e2e)', () => {
         whitelist: true,
         forbidNonWhitelisted: true,
         transform: true,
+        // Same as src/main.ts: the e2e app must validate exactly like production does.
+        transformOptions: { enableImplicitConversion: true },
       }),
     );
     await app.init();

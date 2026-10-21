@@ -24,6 +24,7 @@ import { HealthModule } from './health/health.module';
 import { WidgetModule } from './widget/widget.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { PresenceModule } from './presence/presence.module';
+import { AutomationModule } from './automation/automation.module';
 import { CannedResponsesModule } from './canned-responses/canned-responses.module';
 
 @Module({
@@ -54,6 +55,7 @@ import { CannedResponsesModule } from './canned-responses/canned-responses.modul
     CannedResponsesModule,
     AnalyticsModule,
     PresenceModule,
+    AutomationModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

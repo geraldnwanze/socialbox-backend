@@ -28,6 +28,7 @@ import { WebhooksService } from './webhooks/webhooks.service';
 import { EmailSyncService } from './email/email-sync.service';
 import { EmailSyncProcessor } from './email/email-sync.processor';
 import { EmailIdleService } from './email/email-idle.service';
+import { AutomationModule } from './automation/automation.module';
 
 /**
  * The worker process: no HTTP server, just BullMQ consumers for the four queues (webhooks,
@@ -59,6 +60,7 @@ import { EmailIdleService } from './email/email-idle.service';
     MessagesModule,
     StorageModule,
     RealtimeModule,
+    AutomationModule,
   ],
   providers: [
     WebhookProcessor,

@@ -59,6 +59,8 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
         whitelist: true,
         forbidNonWhitelisted: true,
         transform: true,
+        // Same as src/main.ts: the e2e app must validate exactly like production does.
+        transformOptions: { enableImplicitConversion: true },
       }),
     );
     await app.init();
@@ -932,6 +934,174 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
         .getRepository(Message)
         .count({ where: { conversationId } });
       expect(sent).toBe(0);
+    });
+  });
+
+  describe('automation rules', () => {
+    let tagId: string;
+    let agentMemberId: string;
+    let ruleId: string;
+
+    beforeAll(async () => {
+      tagId = (
+        await api()
+          .post('/tags')
+          .set(as(owner))
+          .send({ name: 'Refund', color: '#EF4444' })
+          .expect(201)
+      ).body.id;
+      const members = await api()
+        .get('/workspace/members')
+        .set(as(owner))
+        .expect(200);
+      agentMemberId = members.body.find(
+        (m: { role: string }) => m.role === 'AGENT',
+      ).id;
+    });
+
+    const rule = (over: Record<string, unknown> = {}) => ({
+      name: 'Refund requests',
+      conditions: [{ type: 'KEYWORDS', keywords: ['refund', 'chargeback'] }],
+      actions: [
+        { type: 'ADD_TAG', tagId },
+        { type: 'SET_PRIORITY', priority: 'HIGH' },
+        { type: 'ASSIGN', memberIds: [agentMemberId] },
+      ],
+      ...over,
+    });
+
+    it('is for admins only', async () => {
+      await api().get('/automation-rules').set(as(agent)).expect(403);
+      await api()
+        .post('/automation-rules')
+        .set(as(agent))
+        .send(rule())
+        .expect(403);
+    });
+
+    it('creates, lists, updates (toggle, edit) and deletes a rule', async () => {
+      const created = await api()
+        .post('/automation-rules')
+        .set(as(owner))
+        .send(rule())
+        .expect(201);
+      ruleId = created.body.id;
+      expect(created.body).toMatchObject({
+        enabled: true,
+        position: 0,
+        triggerCount: 0,
+      });
+
+      const list = await api()
+        .get('/automation-rules')
+        .set(as(owner))
+        .expect(200);
+      expect(list.body.map((r: { name: string }) => r.name)).toEqual([
+        'Refund requests',
+      ]);
+
+      const off = await api()
+        .patch(`/automation-rules/${ruleId}`)
+        .set(as(owner))
+        .send({ enabled: false })
+        .expect(200);
+      expect(off.body.enabled).toBe(false);
+      const renamed = await api()
+        .patch(`/automation-rules/${ruleId}`)
+        .set(as(owner))
+        .send({ name: 'Refunds', conditions: [{ type: 'FIRST_MESSAGE' }] })
+        .expect(200);
+      expect(renamed.body).toMatchObject({
+        name: 'Refunds',
+        conditions: [{ type: 'FIRST_MESSAGE' }],
+      });
+
+      await api()
+        .delete(`/automation-rules/${ruleId}`)
+        .set(as(owner))
+        .expect(204);
+      expect(
+        (await api().get('/automation-rules').set(as(owner))).body,
+      ).toEqual([]);
+    });
+
+    it('rejects bad rules with readable messages', async () => {
+      const post = (body: object) =>
+        api().post('/automation-rules').set(as(owner)).send(body);
+      expect(
+        (await post(rule({ actions: [] })).expect(400)).body.message,
+      ).toContain('at least one action');
+      expect(
+        (
+          await post(
+            rule({ conditions: [{ type: 'KEYWORDS', keywords: [] }] }),
+          ).expect(400)
+        ).body.message,
+      ).toContain('keyword');
+      expect(
+        (
+          await post(
+            rule({
+              actions: [
+                {
+                  type: 'ADD_TAG',
+                  tagId: '00000000-0000-4000-8000-000000000000',
+                },
+              ],
+            }),
+          ).expect(400)
+        ).body.message,
+      ).toContain('tag from this workspace');
+      expect(
+        (
+          await post(
+            rule({ actions: [{ type: 'AUTO_REPLY', text: '' }] }),
+          ).expect(400)
+        ).body.message,
+      ).toContain('some text');
+      await post(rule({ name: '' })).expect(400);
+      await post({ ...rule(), surprise: true }).expect(400);
+    });
+
+    it("does not let a rule point at another workspace's teammates or tags", async () => {
+      const others = await api()
+        .get('/workspace/members')
+        .set(as(outsider, otherWs))
+        .expect(200);
+      const foreignMember = others.body[0].id;
+      const res = await api()
+        .post('/automation-rules')
+        .set(as(owner))
+        .send(
+          rule({ actions: [{ type: 'ASSIGN', memberIds: [foreignMember] }] }),
+        )
+        .expect(400);
+      expect(res.body.message).toContain('this workspace');
+    });
+
+    it('keeps rules private to their workspace', async () => {
+      const created = await api()
+        .post('/automation-rules')
+        .set(as(owner))
+        .send(rule())
+        .expect(201);
+      expect(
+        (
+          await api()
+            .get('/automation-rules')
+            .set(as(outsider, otherWs))
+            .expect(200)
+        ).body,
+      ).toEqual([]);
+      await api()
+        .patch(`/automation-rules/${created.body.id}`)
+        .set(as(outsider, otherWs))
+        .send({ enabled: false })
+        .expect(404);
+      await api()
+        .delete(`/automation-rules/${created.body.id}`)
+        .set(as(outsider, otherWs))
+        .expect(404);
     });
   });
 });

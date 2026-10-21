@@ -13,6 +13,7 @@ import { ChannelAdapterRegistry } from '../../channels/channel-adapter.registry'
 import { ContactsService } from '../../contacts/contacts.service';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { MessagesService } from '../../messages/messages.service';
+import { AutomationService } from '../../automation/automation.service';
 
 @Processor(QueueName.WEBHOOKS)
 export class WebhookProcessor extends WorkerHost {
@@ -26,6 +27,7 @@ export class WebhookProcessor extends WorkerHost {
     private readonly contactsService: ContactsService,
     private readonly conversationsService: ConversationsService,
     private readonly messagesService: MessagesService,
+    private readonly automationService: AutomationService,
   ) {
     super();
   }
@@ -69,7 +71,7 @@ export class WebhookProcessor extends WorkerHost {
               metadata: event.contact.metadata,
             });
 
-          const { conversation } =
+          const { conversation, created: isNewConversation } =
             await this.conversationsService.findOrCreateForInbound({
               workspaceId: connection.workspaceId,
               channelConnectionId: connection.id,
@@ -79,18 +81,32 @@ export class WebhookProcessor extends WorkerHost {
               firstMessageAt: event.sentAt,
             });
 
-          await this.messagesService.createInbound({
-            workspaceId: connection.workspaceId,
-            conversationId: conversation.id,
-            channelConnectionId: connection.id,
-            externalMessageId: event.externalMessageId,
-            senderExternalId: event.contact.externalUserId,
-            messageType: event.messageType,
-            content: event.content,
-            metadata: event.messageMetadata,
-            attachments: event.attachments,
-            sentAt: event.sentAt,
-          });
+          const { created: isNewMessage } =
+            await this.messagesService.createInbound({
+              workspaceId: connection.workspaceId,
+              conversationId: conversation.id,
+              channelConnectionId: connection.id,
+              externalMessageId: event.externalMessageId,
+              senderExternalId: event.contact.externalUserId,
+              messageType: event.messageType,
+              content: event.content,
+              metadata: event.messageMetadata,
+              attachments: event.attachments,
+              sentAt: event.sentAt,
+            });
+
+          // Only for a genuinely new message: a retried delivery must not run the rules twice.
+          if (isNewMessage) {
+            await this.automationService.run({
+              workspaceId: connection.workspaceId,
+              conversationId: conversation.id,
+              channelConnectionId: connection.id,
+              channelType: connection.type,
+              text: event.content ?? '',
+              isNewConversation,
+              contactName: contact.displayName,
+            });
+          }
         } else if (event.kind === 'MESSAGE_STATUS') {
           await this.messagesService.applyStatusUpdate(
             connection.id,

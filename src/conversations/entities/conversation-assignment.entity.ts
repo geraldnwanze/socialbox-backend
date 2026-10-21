@@ -31,8 +31,9 @@ export class ConversationAssignment {
   @JoinColumn({ name: 'assigned_to_id' })
   assignedTo?: WorkspaceMember;
 
-  @Column()
-  assignedById: string;
+  /** Null when an automation rule made the assignment. */
+  @Column({ type: 'uuid', nullable: true })
+  assignedById?: string;
 
   @ManyToOne(() => WorkspaceMember, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'assigned_by_id' })

@@ -316,6 +316,22 @@ checked when the job runs, so turning it off also stops receipts that were alrea
   channel identity, and all their conversations. Admins can **merge** a duplicate into a contact (moves
   identities and conversations, fills blanks, then deletes the duplicate). Merging is always manual —
   contacts are never auto-matched across channels.
+- **Automations** (Settings → Automations, admins): rules of the form *when a customer message matches all
+  of these conditions, do these actions*. Conditions: channel, keywords (case-insensitive, substring), first
+  message of a conversation, unassigned, outside opening hours (in a time zone you choose); leave them empty
+  for "every message". Actions: assign to the least busy of chosen teammates (or anyone), add a tag, set
+  priority, send an automatic reply, mark resolved. Details worth knowing:
+  - Rules run in the worker right after a *new* customer message is stored (never for a retried delivery),
+    in creation order. An error in a rule is logged and never affects the message itself.
+  - Several rules can match one message. The first rule that assigns wins, and no rule takes a conversation
+    away from someone who already owns it.
+  - **Automatic replies** are sent through the normal channel pipeline as the system (labelled "Automated
+    reply"), at most once per conversation per cooldown (default 12h) so nothing can loop, and they never
+    count as an agent's first response in analytics. `{{customer_name}}` works as in saved replies.
+  - Everything a rule does appears in the conversation's activity as *Automation "name"*, and each rule
+    shows how often it has run.
+  - Not yet: re-ordering rules, "any of" conditions, delays, or rules on other triggers (e.g. no reply
+    after N hours).
 - **Activity timeline, priority and internal notes**: every conversation keeps an append-only history —
   started, assigned/unassigned, resolved/reopened/pending (including "customer replied, so it was
   reopened"), priority changes and tag changes — each with who did it. Agents can also leave **internal

@@ -235,7 +235,9 @@ export class ConversationsService {
     workspaceId: string,
     conversationId: string,
     assignedToMemberId: string | null,
-    assignedByMemberId: string,
+    assignedByMemberId: string | null,
+    /** Extra facts for the activity log, e.g. which automation rule did this. */
+    meta: Record<string, unknown> = {},
   ): Promise<Conversation> {
     const conversation = await this.findOneForWorkspace(
       workspaceId,
@@ -264,7 +266,7 @@ export class ConversationsService {
       this.assignments.create({
         conversationId,
         assignedToId: assignedToMemberId ?? undefined,
-        assignedById: assignedByMemberId,
+        assignedById: assignedByMemberId ?? undefined,
       }),
     );
 
@@ -289,8 +291,9 @@ export class ConversationsService {
           ? {
               toMemberId: assignee.id,
               toName: assignee.user?.fullName ?? 'A teammate',
+              ...meta,
             }
-          : { fromMemberId: previousAssignee ?? null },
+          : { fromMemberId: previousAssignee ?? null, ...meta },
       );
     }
 
@@ -312,6 +315,7 @@ export class ConversationsService {
     workspaceId: string,
     conversationId: string,
     actorMemberId: string | null = null,
+    meta: Record<string, unknown> = {},
   ): Promise<Conversation> {
     return this.setStatus(
       workspaceId,
@@ -319,6 +323,7 @@ export class ConversationsService {
       ConversationStatus.RESOLVED,
       RealtimeEvent.CONVERSATION_RESOLVED,
       actorMemberId,
+      meta,
     );
   }
 
@@ -358,6 +363,7 @@ export class ConversationsService {
     status: ConversationStatus,
     event: RealtimeEvent,
     actorMemberId: string | null,
+    meta: Record<string, unknown> = {},
   ): Promise<Conversation> {
     const conversation = await this.findOneForWorkspace(
       workspaceId,
@@ -374,7 +380,7 @@ export class ConversationsService {
         conversationId,
         'STATUS_CHANGED',
         actorMemberId,
-        { from: previous, to: status },
+        { from: previous, to: status, ...meta },
       );
     }
     this.realtimeService.toWorkspace(workspaceId, event, conversation);
@@ -386,7 +392,8 @@ export class ConversationsService {
     workspaceId: string,
     conversationId: string,
     priority: ConversationPriority,
-    actorMemberId: string,
+    actorMemberId: string | null,
+    meta: Record<string, unknown> = {},
   ): Promise<Conversation> {
     const conversation = await this.findOneForWorkspace(
       workspaceId,
@@ -401,7 +408,7 @@ export class ConversationsService {
       conversationId,
       'PRIORITY_CHANGED',
       actorMemberId,
-      { from: previous, to: priority },
+      { from: previous, to: priority, ...meta },
     );
     this.realtimeService.toWorkspace(
       workspaceId,

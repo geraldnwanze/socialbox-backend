@@ -166,7 +166,9 @@ export class MessagesService {
     workspaceId: string;
     conversationId: string;
     channelConnectionId: string;
-    senderMemberId: string;
+    senderMemberId?: string;
+    /** Set for messages a rule sent: shown as automated, and never counted as an agent's reply. */
+    automation?: { ruleId: string; ruleName: string };
     type: MessageType;
     text?: string;
     attachment?: { storageKey: string; mimeType: string; fileName?: string };
@@ -176,13 +178,14 @@ export class MessagesService {
         workspaceId: input.workspaceId,
         conversationId: input.conversationId,
         channelConnectionId: input.channelConnectionId,
-        senderType: SenderType.AGENT,
+        senderType: input.automation ? SenderType.SYSTEM : SenderType.AGENT,
         senderMemberId: input.senderMemberId,
         direction: MessageDirection.OUTBOUND,
         messageType: input.type,
         content: input.text,
         status: MessageStatus.QUEUED,
         sentAt: new Date(),
+        metadata: input.automation ? { automation: input.automation } : {},
       }),
     );
 
