@@ -1104,4 +1104,332 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
         .expect(404);
     });
   });
+
+  describe('saved views, filters and bulk actions', () => {
+    let conn: ChannelConnection;
+    let ids: string[];
+    let tagId: string;
+    let agentMemberId: string;
+    let viewId: string;
+
+    const list = async (query: string, token = owner) =>
+      (await api().get(`/conversations?${query}`).set(as(token)).expect(200))
+        .body as {
+        items: { id: string }[];
+        nextCursor: string | null;
+      };
+
+    beforeAll(async () => {
+      conn = await db.getRepository(ChannelConnection).save({
+        workspaceId: ws,
+        type: ChannelType.TELEGRAM,
+        provider: 'TelegramAdapter',
+        status: ChannelConnectionStatus.CONNECTED,
+        externalAccountId: `bot-bulk-${stamp}`,
+        metadata: {},
+      });
+      const contact = await db
+        .getRepository(Contact)
+        .save({ workspaceId: ws, displayName: 'Bulk' });
+      ids = [];
+      for (let i = 0; i < 5; i++) {
+        const c = await db.getRepository(Conversation).save({
+          workspaceId: ws,
+          channelConnectionId: conn.id,
+          contactId: contact.id,
+          externalConversationId: `bulk-${stamp}-${i}`,
+          lastMessageAt: new Date(Date.now() - (5 - i) * 60_000), // 0 is oldest
+          unreadCount: 1,
+        });
+        ids.push(c.id);
+      }
+      tagId = (
+        await api()
+          .post('/tags')
+          .set(as(owner))
+          .send({ name: 'Bulk tag', color: '#10B981' })
+          .expect(201)
+      ).body.id;
+      const members = await api()
+        .get('/workspace/members')
+        .set(as(owner))
+        .expect(200);
+      agentMemberId = members.body.find(
+        (m: { role: string }) => m.role === 'AGENT',
+      ).id;
+    });
+
+    it('sorts oldest first and pages through everything with the cursor', async () => {
+      const newest = await list(`channelConnectionId=${conn.id}`);
+      expect(newest.items.map((c) => c.id)).toEqual([...ids].reverse());
+      const oldest = await list(
+        `channelConnectionId=${conn.id}&sort=oldest&limit=2`,
+      );
+      expect(oldest.items.map((c) => c.id)).toEqual(ids.slice(0, 2));
+      const next = await list(
+        `channelConnectionId=${conn.id}&sort=oldest&limit=2&cursor=${oldest.nextCursor}`,
+      );
+      expect(next.items.map((c) => c.id)).toEqual(ids.slice(2, 4));
+      await api()
+        .get('/conversations?sort=sideways')
+        .set(as(owner))
+        .expect(400);
+    });
+
+    it('bulk: changes many conversations, logs each, and reports the unknown ones', async () => {
+      const targets = ids.slice(0, 3);
+      const res = await api()
+        .post('/conversations/bulk')
+        .set(as(agent))
+        .send({
+          ids: [...targets, '00000000-0000-4000-8000-000000000000'],
+          action: { type: 'RESOLVE' },
+        })
+        .expect(201);
+      expect(res.body.updated).toBe(3);
+      expect(res.body.failed).toEqual([
+        {
+          id: '00000000-0000-4000-8000-000000000000',
+          reason: 'Conversation not found',
+        },
+      ]);
+      const rows = await db
+        .getRepository(Conversation)
+        .findBy({ workspaceId: ws, channelConnectionId: conn.id });
+      expect(
+        rows
+          .filter((r) => r.status === 'RESOLVED')
+          .map((r) => r.id)
+          .sort(),
+      ).toEqual([...targets].sort());
+      const events = await api()
+        .get(`/conversations/${targets[0]}/events`)
+        .set(as(owner))
+        .expect(200);
+      expect(
+        events.body.some(
+          (e: { type: string; actor: { name: string } }) =>
+            e.type === 'STATUS_CHANGED' && e.actor?.name === 'agent',
+        ),
+      ).toBe(true);
+    });
+
+    it('bulk: assign, priority, tags (once each) and mark read', async () => {
+      const bulk = (action: object, who = owner) =>
+        api()
+          .post('/conversations/bulk')
+          .set(as(who))
+          .send({ ids, action })
+          .expect(201);
+
+      expect(
+        (await bulk({ type: 'ASSIGN', memberId: agentMemberId })).body.updated,
+      ).toBe(5);
+      expect(
+        (await bulk({ type: 'PRIORITY', priority: 'URGENT' })).body.updated,
+      ).toBe(5);
+      await bulk({ type: 'ADD_TAG', tagId });
+      await bulk({ type: 'ADD_TAG', tagId }); // again: no duplicate events
+      const tagEvents = (
+        await api().get(`/conversations/${ids[0]}/events`).set(as(owner))
+      ).body.filter((e: { type: string }) => e.type === 'TAG_ADDED');
+      expect(tagEvents).toHaveLength(1);
+
+      await bulk({ type: 'MARK_READ' });
+      const rows = await db
+        .getRepository(Conversation)
+        .findBy({ workspaceId: ws, channelConnectionId: conn.id });
+      expect(
+        rows.every(
+          (r) =>
+            r.assignedTo === agentMemberId &&
+            r.priority === 'URGENT' &&
+            r.unreadCount === 0,
+        ),
+      ).toBe(true);
+
+      await bulk({ type: 'ASSIGN', memberId: null });
+      expect(
+        (
+          await db
+            .getRepository(Conversation)
+            .findBy({ channelConnectionId: conn.id })
+        ).every((r) => !r.assignedTo),
+      ).toBe(true);
+    });
+
+    it('filters by tag and priority', async () => {
+      expect(
+        (await list(`tagId=${tagId}&channelConnectionId=${conn.id}`)).items,
+      ).toHaveLength(5);
+      expect(
+        (await list(`priority=URGENT&channelConnectionId=${conn.id}`)).items,
+      ).toHaveLength(5);
+      expect(
+        (await list(`priority=LOW&channelConnectionId=${conn.id}`)).items,
+      ).toHaveLength(0);
+      await api()
+        .post('/conversations/bulk')
+        .set(as(owner))
+        .send({ ids, action: { type: 'REMOVE_TAG', tagId } })
+        .expect(201);
+      expect(
+        (await list(`tagId=${tagId}&channelConnectionId=${conn.id}`)).items,
+      ).toHaveLength(0);
+    });
+
+    it('bulk: validates input and never touches another workspace', async () => {
+      const bulk = (body: object, who = owner, workspace = ws) =>
+        api().post('/conversations/bulk').set(as(who, workspace)).send(body);
+      await bulk({ ids: [], action: { type: 'RESOLVE' } }).expect(400);
+      await bulk({
+        ids: Array(101).fill(ids[0]),
+        action: { type: 'RESOLVE' },
+      }).expect(400);
+      await bulk({ ids: ['nope'], action: { type: 'RESOLVE' } }).expect(400);
+      expect(
+        (await bulk({ ids, action: { type: 'EXPLODE' } }).expect(400)).body
+          .message,
+      ).toContain('Unknown action');
+      expect(
+        (
+          await bulk({
+            ids,
+            action: { type: 'PRIORITY', priority: 'SOON' },
+          }).expect(400)
+        ).body.message,
+      ).toContain('valid priority');
+      expect(
+        (
+          await bulk({
+            ids,
+            action: {
+              type: 'ASSIGN',
+              memberId: '00000000-0000-4000-8000-000000000000',
+            },
+          }).expect(400)
+        ).body.message,
+      ).toContain('this workspace');
+
+      const foreign = await bulk(
+        { ids, action: { type: 'REOPEN' } },
+        outsider,
+        otherWs,
+      ).expect(201);
+      expect(foreign.body).toMatchObject({ updated: 0 });
+      expect(foreign.body.failed).toHaveLength(5);
+    });
+
+    it('creates private and shared views, with the right visibility', async () => {
+      const mine = await api()
+        .post('/inbox-views')
+        .set(as(agent))
+        .send({
+          name: 'My urgent',
+          filters: { priority: 'URGENT', assignedTo: 'me', sort: 'oldest' },
+        })
+        .expect(201);
+      viewId = mine.body.id;
+      expect(mine.body).toMatchObject({
+        shared: false,
+        canEdit: true,
+        filters: { priority: 'URGENT', assignedTo: 'me', sort: 'oldest' },
+      });
+
+      await api()
+        .post('/inbox-views')
+        .set(as(agent))
+        .send({ name: 'Nope', filters: {}, shared: true })
+        .expect(403);
+      const shared = await api()
+        .post('/inbox-views')
+        .set(as(owner))
+        .send({ name: 'Team: refunds', filters: { tagId }, shared: true })
+        .expect(201);
+      expect(shared.body.shared).toBe(true);
+
+      // agent sees theirs + shared (can't edit the shared one); owner doesn't see the agent's private view
+      const agentViews = (
+        await api().get('/inbox-views').set(as(agent)).expect(200)
+      ).body;
+      expect(
+        agentViews.map((v: { name: string; canEdit: boolean }) => [
+          v.name,
+          v.canEdit,
+        ]),
+      ).toEqual([
+        ['Team: refunds', false],
+        ['My urgent', true],
+      ]);
+      const ownerViews = (
+        await api().get('/inbox-views').set(as(owner)).expect(200)
+      ).body;
+      expect(ownerViews.map((v: { name: string }) => v.name)).toEqual([
+        'Team: refunds',
+      ]);
+    });
+
+    it('protects views: private ones are invisible to others, shared ones editable only by admins', async () => {
+      await api()
+        .patch(`/inbox-views/${viewId}`)
+        .set(as(owner))
+        .send({ name: 'Hijack' })
+        .expect(404);
+      await api().delete(`/inbox-views/${viewId}`).set(as(owner)).expect(404);
+      await api()
+        .patch(`/inbox-views/${viewId}`)
+        .set(as(outsider, otherWs))
+        .send({ name: 'x' })
+        .expect(404);
+
+      const sharedId = (
+        await api().get('/inbox-views').set(as(agent))
+      ).body.find((v: { shared: boolean }) => v.shared).id;
+      await api()
+        .patch(`/inbox-views/${sharedId}`)
+        .set(as(agent))
+        .send({ name: 'Agent edit' })
+        .expect(403);
+      await api().delete(`/inbox-views/${sharedId}`).set(as(agent)).expect(403);
+      await api()
+        .patch(`/inbox-views/${sharedId}`)
+        .set(as(owner))
+        .send({ name: 'Team: refunds & chargebacks' })
+        .expect(200);
+      await api()
+        .patch(`/inbox-views/${viewId}`)
+        .set(as(agent))
+        .send({ shared: true })
+        .expect(403);
+    });
+
+    it('validates saved filters', async () => {
+      const post = (filters: object) =>
+        api().post('/inbox-views').set(as(owner)).send({ name: 'x', filters });
+      expect((await post({ evil: 1 }).expect(400)).body.message).toContain(
+        'Unknown filter',
+      );
+      expect(
+        (
+          await post({ tagId: '00000000-0000-4000-8000-000000000000' }).expect(
+            400,
+          )
+        ).body.message,
+      ).toContain('tag from this workspace');
+      await api()
+        .post('/inbox-views')
+        .set(as(owner))
+        .send({ name: '', filters: {} })
+        .expect(400);
+    });
+
+    it('lets owners delete their views', async () => {
+      await api().delete(`/inbox-views/${viewId}`).set(as(agent)).expect(204);
+      expect(
+        (await api().get('/inbox-views').set(as(agent))).body.map(
+          (v: { name: string }) => v.name,
+        ),
+      ).toEqual(['Team: refunds & chargebacks']);
+    });
+  });
 });

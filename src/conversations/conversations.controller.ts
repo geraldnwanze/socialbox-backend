@@ -15,6 +15,8 @@ import { ListConversationsDto } from './dto/list-conversations.dto';
 import { AssignConversationDto } from './dto/assign-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { AddNoteDto } from './dto/add-note.dto';
+import { BulkActionDto } from './dto/bulk-action.dto';
+import { BulkConversationsService } from './bulk-conversations.service';
 import { ConversationEventsService } from './conversation-events.service';
 import { CreateMessageDto } from '../messages/dto/create-message.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -33,6 +35,7 @@ export class ConversationsController {
     private readonly messagesService: MessagesService,
     private readonly tagsService: TagsService,
     private readonly eventsService: ConversationEventsService,
+    private readonly bulkService: BulkConversationsService,
   ) {}
 
   @Get()
@@ -44,6 +47,20 @@ export class ConversationsController {
       workspace.workspaceId,
       workspace.workspaceMemberId,
       query,
+    );
+  }
+
+  /** One action on up to 100 conversations; failures are reported per conversation. */
+  @Post('bulk')
+  bulk(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @Body() dto: BulkActionDto,
+  ) {
+    return this.bulkService.run(
+      workspace.workspaceId,
+      workspace.workspaceMemberId,
+      dto.ids,
+      dto.action,
     );
   }
 

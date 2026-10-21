@@ -216,6 +216,17 @@ export class ConversationsService {
         memberId: query.assignedTo,
       });
     }
+    if (query.priority) {
+      qb.andWhere('conversation.priority = :priority', {
+        priority: query.priority,
+      });
+    }
+    if (query.tagId) {
+      qb.andWhere(
+        'EXISTS (SELECT 1 FROM conversation_tags ct WHERE ct.conversation_id = conversation.id AND ct.tag_id = :tagId)',
+        { tagId: query.tagId },
+      );
+    }
     if (query.unreadOnly === 'true') {
       qb.andWhere('conversation.unreadCount > 0');
     }
@@ -228,7 +239,13 @@ export class ConversationsService {
       );
     }
 
-    return paginateByColumn(qb, 'conversation', 'lastMessageAt', query);
+    return paginateByColumn(
+      qb,
+      'conversation',
+      'lastMessageAt',
+      query,
+      query.sort === 'oldest' ? 'ASC' : 'DESC',
+    );
   }
 
   async assign(

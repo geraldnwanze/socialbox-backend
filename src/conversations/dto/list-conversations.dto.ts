@@ -1,6 +1,7 @@
 import {
   IsBooleanString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -10,6 +11,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ConversationStatus } from '../enums/conversation-status.enum';
+import { ConversationPriority } from '../enums/conversation-priority.enum';
 
 export class ListConversationsDto {
   @IsOptional()
@@ -31,6 +33,19 @@ export class ListConversationsDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsEnum(ConversationPriority)
+  priority?: ConversationPriority;
+
+  @IsOptional()
+  @IsUUID()
+  tagId?: string;
+
+  /** newest (default) or oldest first, by last message. */
+  @IsOptional()
+  @IsIn(['newest', 'oldest'])
+  sort?: 'newest' | 'oldest';
 
   @IsOptional()
   @IsString()

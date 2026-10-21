@@ -316,6 +316,19 @@ checked when the job runs, so turning it off also stops receipts that were alrea
   channel identity, and all their conversations. Admins can **merge** a duplicate into a contact (moves
   identities and conversations, fills blanks, then deletes the duplicate). Merging is always manual —
   contacts are never auto-matched across channels.
+- **Saved views, filters and bulk actions** (inbox):
+  - *Filter* menu: priority, tag and order (newest/oldest first), on top of the sidebar (All / Unread /
+    Assigned to me / a channel), the Open/Pending/Resolved tabs and search. The list now has **Load more** and
+    pages through every match (it used to stop at the first 20); sidebar counts show "20+" when there are more.
+  - *Save view* stores the current filters under a name. Views are private to you; admins can **share** one
+    with the whole team (everyone sees it, only admins/creator can change it). Someone else's private view is
+    invisible to you. Saved filters are validated, and ids must belong to the workspace.
+  - *Select* turns on multi-select (click, shift-click for a range, "select all loaded", Esc to leave). The bar
+    applies one action to everything selected: resolve / reopen / pending, assign or unassign, set priority,
+    add or remove a tag, mark read (this sends "seen" like opening the conversation does, honouring the read
+    receipts setting). Up to 100 at a time; each conversation goes through the same code as a single change, so
+    the activity log, notifications and realtime updates all happen, and any that fail are reported without
+    stopping the rest.
 - **Automations** (Settings → Automations, admins): rules of the form *when a customer message matches all
   of these conditions, do these actions*. Conditions: channel, keywords (case-insensitive, substring), first
   message of a conversation, unassigned, outside opening hours (in a time zone you choose); leave them empty

@@ -25,6 +25,7 @@ import { WidgetModule } from './widget/widget.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { PresenceModule } from './presence/presence.module';
 import { AutomationModule } from './automation/automation.module';
+import { InboxViewsModule } from './inbox-views/inbox-views.module';
 import { CannedResponsesModule } from './canned-responses/canned-responses.module';
 
 @Module({
@@ -56,6 +57,7 @@ import { CannedResponsesModule } from './canned-responses/canned-responses.modul
     AnalyticsModule,
     PresenceModule,
     AutomationModule,
+    InboxViewsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

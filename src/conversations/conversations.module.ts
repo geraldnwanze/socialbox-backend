@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Conversation } from './entities/conversation.entity';
 import { ConversationEvent } from './entities/conversation-event.entity';
 import { ConversationEventsService } from './conversation-events.service';
+import { BulkConversationsService } from './bulk-conversations.service';
 import { ConversationParticipant } from './entities/conversation-participant.entity';
 import { ConversationAssignment } from './entities/conversation-assignment.entity';
 import { ContactIdentity } from '../contacts/entities/contact-identity.entity';
@@ -36,7 +37,11 @@ import { Message } from '../messages/entities/message.entity';
     AccessControlModule,
   ],
   controllers: [ConversationsController],
-  providers: [ConversationsService, ConversationEventsService],
+  providers: [
+    ConversationsService,
+    ConversationEventsService,
+    BulkConversationsService,
+  ],
   exports: [ConversationsService, ConversationEventsService],
 })
 export class ConversationsModule {}
