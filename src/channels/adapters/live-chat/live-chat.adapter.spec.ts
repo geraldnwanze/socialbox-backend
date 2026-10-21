@@ -76,8 +76,33 @@ describe('LiveChatAdapter', () => {
       content: 'Hello',
       contact: {
         externalUserId: 'abcd-1234',
-        displayName: 'Website visitor ABCD',
+        fallbackDisplayName: 'Website visitor ABCD',
       },
+    });
+  });
+
+  it('uses the pre-chat name and email, and maps stored attachments', async () => {
+    const [event] = await adapter.handleWebhook(
+      {
+        visitorId: 'abcd-1234',
+        messageId: 'm-12345679',
+        text: '',
+        profile: { name: 'Wendy', email: 'w@x.com' },
+        attachments: [
+          {
+            storageKey: 'k',
+            mimeType: 'application/pdf',
+            fileName: 'a.pdf',
+            size: 3,
+          },
+        ],
+      },
+      {} as never,
+    );
+    expect(event).toMatchObject({
+      messageType: MessageType.DOCUMENT,
+      contact: { displayName: 'Wendy', email: 'w@x.com' },
+      attachments: [{ storageKey: 'k', fileName: 'a.pdf' }],
     });
   });
 

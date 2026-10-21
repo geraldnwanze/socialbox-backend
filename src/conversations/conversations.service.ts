@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import type { Redis } from 'ioredis';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Conversation } from './entities/conversation.entity';
@@ -14,6 +15,7 @@ import { RealtimeEvent } from '../realtime/realtime.events';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { paginateByColumn } from '../common/pagination/cursor-pagination';
 import { ResourceNotFoundException } from '../common/exceptions/app.exception';
+import { REDIS_CLIENT } from '../redis/redis.module';
 
 @Injectable()
 export class ConversationsService {
@@ -29,6 +31,7 @@ export class ConversationsService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly realtimeService: RealtimeService,
     private readonly notificationsService: NotificationsService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   /**
@@ -298,6 +301,15 @@ export class ConversationsService {
     this.realtimeService.toWorkspace(workspaceId, event, conversation);
     this.realtimeService.toConversation(conversationId, event, conversation);
     return conversation;
+  }
+
+  /** An agent is typing in this conversation: channels that can show it (live chat) read the flag. */
+  async agentTyping(
+    workspaceId: string,
+    conversationId: string,
+  ): Promise<void> {
+    await this.findOneForWorkspace(workspaceId, conversationId);
+    await this.redis.set(`typing:agent:${conversationId}`, '1', 'EX', 6);
   }
 
   async markRead(

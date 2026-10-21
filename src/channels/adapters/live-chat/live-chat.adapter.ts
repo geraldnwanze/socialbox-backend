@@ -17,6 +17,7 @@ import {
   MessageStatus,
   MessageType,
 } from '../../../messages/enums/message.enums';
+import { LiveChatHours, parseHours } from './live-chat-hours';
 
 export interface LiveChatInboundPayload {
   visitorId: string;
@@ -30,6 +31,15 @@ export interface LiveChatInboundPayload {
     countryCode?: string;
     pageUrl?: string;
   };
+  /** What the visitor typed into the pre-chat form (untrusted, length-checked). */
+  profile?: { name?: string; email?: string };
+  /** Files the widget API already stored for this message. */
+  attachments?: {
+    storageKey: string;
+    mimeType: string;
+    fileName?: string;
+    size?: number;
+  }[];
 }
 
 export interface LiveChatWidgetConfig {
@@ -37,12 +47,19 @@ export interface LiveChatWidgetConfig {
   greeting: string;
   color: string;
   allowedOrigins: string[];
+  /** Pre-chat form: ask the visitor for these before their first message. */
+  askName: boolean;
+  askEmail: boolean;
+  offlineMessage: string;
+  hours: LiveChatHours;
 }
 
 const DEFAULTS = {
   title: 'Chat with us',
   greeting: 'Hi! How can we help?',
   color: '#4F46E5',
+  offlineMessage:
+    "We're offline right now. Leave a message and we'll get back to you.",
 };
 
 /**
@@ -56,10 +73,10 @@ export class LiveChatAdapter implements ChannelAdapter {
   readonly type = ChannelType.LIVE_CHAT;
   readonly capabilities: ChannelCapabilities = {
     sendText: true,
-    sendImage: false,
-    sendVideo: false,
-    sendAudio: false,
-    sendDocument: false,
+    sendImage: true,
+    sendVideo: true,
+    sendAudio: true,
+    sendDocument: true,
     markAsRead: false,
     deliveryReceipts: false,
     readReceipts: false,
@@ -116,11 +133,29 @@ export class LiveChatAdapter implements ChannelAdapter {
       }
     });
 
+    const flag = (value: unknown) => value === true || value === 'true';
+    let hours: LiveChatHours;
+    try {
+      hours = parseHours({
+        enabled: input.hoursEnabled,
+        timezone: input.timezone,
+        days: input.hoursDays,
+        start: input.hoursStart,
+        end: input.hoursEnd,
+      });
+    } catch (error) {
+      throw this.invalid((error as Error).message);
+    }
+
     return {
       title: str(input.title, DEFAULTS.title, 60),
       greeting: str(input.greeting, DEFAULTS.greeting, 200),
       color,
       allowedOrigins: [...new Set(allowedOrigins)],
+      askName: flag(input.askName),
+      askEmail: flag(input.askEmail),
+      offlineMessage: str(input.offlineMessage, DEFAULTS.offlineMessage, 300),
+      hours,
     };
   }
 
@@ -142,10 +177,10 @@ export class LiveChatAdapter implements ChannelAdapter {
     _conversation: UnifiedConversation,
     message: OutboundMessage,
   ): Promise<SendMessageResult> {
-    if (message.type !== MessageType.TEXT) {
+    if (!message.text && !message.attachment) {
       throw new AppException(
         'UNSUPPORTED_MESSAGE_TYPE',
-        'Live chat supports text messages only',
+        'Nothing to send: add some text or a file',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -182,14 +217,19 @@ export class LiveChatAdapter implements ChannelAdapter {
         externalMessageId: p.messageId,
         contact: {
           externalUserId: p.visitorId,
-          displayName: `Website visitor ${p.visitorId.slice(0, 4).toUpperCase()}`,
+          displayName: p.profile?.name?.trim() || undefined,
+          fallbackDisplayName: `Website visitor ${p.visitorId.slice(0, 4).toUpperCase()}`,
+          email: p.profile?.email?.trim().toLowerCase() || undefined,
           metadata: p.visitor
             ? { ...p.visitor, lastSeenAt: new Date().toISOString() }
             : undefined,
         },
-        messageType: MessageType.TEXT,
-        content: p.text,
-        attachments: [],
+        messageType:
+          !p.text && p.attachments?.length
+            ? MessageType.DOCUMENT
+            : MessageType.TEXT,
+        content: p.text || undefined,
+        attachments: (p.attachments ?? []).map((a) => ({ ...a })),
         sentAt: new Date(),
         raw: p,
       },

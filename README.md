@@ -101,7 +101,8 @@ just can't be connected until their credentials exist).
 | `REDIS_URL` | Redis connection string (BullMQ + refresh-token blocklist) |
 | `JWT_SECRET` / `JWT_REFRESH_SECRET` | Auth token signing (use different, long random values) |
 | `CREDENTIALS_ENCRYPTION_KEY` | 32-byte base64 key encrypting channel OAuth tokens at rest |
-| `R2_*` | Cloudflare R2 (S3-compatible) for media storage |
+| `R2_*` | Cloudflare R2 (S3-compatible) for media storage. `R2_PUBLIC_ENDPOINT` is only needed when the server reaches storage at an internal address that browsers can't (it's used to sign links for browsers) |
+| `EMAIL_IDLE_ENABLED` | Keep IMAP IDLE connections for instant email (default `true`) |
 | `WHATSAPP_*` | WhatsApp Cloud API app secret / verify token |
 | `TELEGRAM_*` | Telegram webhook secret (bot tokens are supplied per-connection at connect time, not env vars) |
 | `META_*` | Shared Meta app secret/verify token for Messenger + Instagram |
@@ -220,8 +221,16 @@ Things to know:
 - **Allowed websites** is a soft control: browsers always send an honest `Origin` header, so it stops
   your key being reused on other people's sites, but a non-browser client can send anything. The widget
   key itself is public by design.
-- Text only for now (no attachments), and visitors are anonymous ("Website visitor ABCD") — there is no
-  pre-chat form or identify API yet.
+- **Pre-chat form**: in the channel's settings you can ask visitors for their name and/or email before
+  they chat. They become the contact's name and email (visitors without them are "Website visitor ABCD").
+  A name an agent edited by hand is never overwritten. There is no "identify" API for logged-in users yet.
+- **Opening hours**: optionally set days, hours and a time zone. Outside them the widget shows your offline
+  note; visitors can still leave messages. With no hours configured the widget is always "online".
+- **Typing indicators** both ways: agents see "…is typing" while the visitor types, and the visitor sees
+  "Typing…" while an agent types.
+- **Files**: visitors can attach images, PDF, text and Office files up to 5 MB (not SVG/HTML/archives —
+  the type *and* extension must both be on the allow-list); agents can send files back. Needs object
+  storage (`R2_*`). Uploads are rate limited (10/min per IP).
 - **Visitor details**: agents see the visitor's IP address, country (flag + name) and the page they
   were on, in the customer panel. IP and country come from the server's view of the request, never
   from the page: `TRUST_PROXY_HOPS` must match how many proxies sit in front of the API (wrong value =
@@ -235,7 +244,8 @@ Things to know:
   under GDPR-style laws: mention them in your privacy policy and decide how long to keep them.
 - Disconnecting disables the widget immediately; reconnecting keeps the **same key**, so embedded
   snippets don't need updating.
-- Public endpoints are rate limited per IP (20 sessions/min, 30 sends/min, 60 polls/min).
+- Public endpoints are rate limited per IP (20 sessions/min, 30 sends/min, 60 polls/min). The widget still
+  polls (3s open, 15s closed) rather than holding a socket, so replies can take a few seconds to show.
 
 ## Email channel
 
@@ -244,10 +254,12 @@ Workspace (with an app password), Outlook, or your own domain — with no vendor
 
 1. **Settings → Channels → Email → Connect**: address, username/password, and the IMAP/SMTP servers.
    Both are tested on connect, so wrong details fail with a clear message instead of silently.
-2. New mail appears in the inbox within ~30 seconds (`EMAIL_POLL_INTERVAL_MS`); replies are sent via SMTP.
+2. New mail appears in the inbox within a couple of seconds; replies are sent via SMTP.
 
-How it works: a repeating job in the **worker** (queue `email-sync`) polls each connected mailbox's
-INBOX using a per-mailbox cursor (IMAP UIDVALIDITY + last UID) stored in the connection metadata. Each
+How it works: the **worker** keeps an **IMAP IDLE** connection open per mailbox, so new mail is
+imported within a second or two (reconnecting with backoff, and picking up anything that arrived while
+it was down). A slower repeating poll (queue `email-sync`, `EMAIL_POLL_INTERVAL_MS`, default 60s) is the
+safety net. Both run the same import, driven by a per-mailbox cursor (IMAP UIDVALIDITY + last UID) stored in the connection metadata. Each
 mail is handed to the same idempotent webhook → queue pipeline as every other channel, keyed on its
 `Message-ID`, so crashes or re-polls never create duplicates or lose mail.
 
@@ -259,18 +271,25 @@ mail is handed to the same idempotent webhook → queue pipeline as every other 
 - **Skipped on purpose:** auto-replies, bulk/list mail, delivery-failure bounces, and mail from the
   mailbox itself (these clutter the inbox and can start mail loops). Quoted history ("On … wrote:", `>`
   lines) is trimmed from the displayed text.
-- **Not supported yet:** attachments (in or out), HTML rendering (HTML-only mail is shown as text),
-  mail in folders other than INBOX, and a copy of sent replies in the mailbox's Sent folder (many SMTP
-  servers, e.g. Gmail, do that themselves).
+- **Attachments** work both ways (up to 10 MB each, 25 MB / 10 files per mail; inline signature images
+  are skipped, and a file that can't be saved is noted in the message instead of blocking the mail).
+  They need object storage (`R2_*`, see below). Downloads use short-lived signed links and are forced
+  as downloads, never rendered from the storage domain.
+- **Formatted view:** HTML mail is sanitized on arrival (basic formatting only: no scripts, styles,
+  forms or remote images — those would tell the sender when you opened the mail; quoted history is
+  removed) and shown on request in a sandboxed frame, next to the always-available plain text.
+- **Not supported yet:** mail in folders other than INBOX, inline images, and a copy of sent replies in
+  the mailbox's Sent folder (many SMTP servers, e.g. Gmail, do that themselves).
 - **Security:** credentials are encrypted at rest and never returned by the API. Mail server hosts are
   resolved and **refused if they point at private/internal addresses** (so an admin can't aim the
   server at its own network), and unencrypted transport is rejected, unless
   `EMAIL_ALLOW_PRIVATE_HOSTS=true` — a development setting. If the mailbox later rejects the login
   (password changed), the channel is marked `ERROR` with the reason and polling stops until you update
   the credentials via **Settings**.
-- **Try it locally** without a real mailbox: `docker compose -f docker-compose.yml -f docker-compose.mailtest.yml up -d --build`
+- **Try it locally** without a real mailbox: `docker compose -f docker-compose.yml -f docker-compose.mailtest.yml -f docker-compose.storage-test.yml up -d --build`
   starts a throwaway mail server (GreenMail). Connect `support@example.com` / user `support` / password
-  `secret`, IMAP `greenmail:3143`, SMTP `greenmail:3025`, security *None*. Don't use that overlay in production.
+  `secret`, IMAP `greenmail:3143`, SMTP `greenmail:3025`, security *None*. `docker-compose.storage-test.yml`
+  adds a local S3-compatible store so attachments work without a Cloudflare R2 account. Don't use these overlays in production.
 
 ## Saved replies, contacts and analytics
 
@@ -309,5 +328,6 @@ mail is handed to the same idempotent webhook → queue pipeline as every other 
 - Move WhatsApp/Messenger/Instagram through Meta App Review once ready to onboard real businesses.
 - Add a dedicated search index if/when Postgres `ILIKE` search stops being fast enough (the
   repository layer is already isolated behind service methods, so this doesn't touch controllers).
-- Email: attachments, HTML rendering, IMAP IDLE (instant delivery) and per-thread conversations.
+- Email: inline images, other folders, per-thread conversations.
+- Live chat: realtime delivery to the widget (it polls), an identify API for logged-in users.
 - Business-hours-aware response-time stats and per-agent personal saved replies.

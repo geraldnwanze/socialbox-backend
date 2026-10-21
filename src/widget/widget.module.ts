@@ -5,6 +5,8 @@ import { ChannelConnection } from '../channels/entities/channel-connection.entit
 import { Conversation } from '../conversations/entities/conversation.entity';
 import { Message } from '../messages/entities/message.entity';
 import { WebhooksModule } from '../webhooks/webhooks.module';
+import { StorageModule } from '../storage/storage.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { WidgetController } from './widget.controller';
 import { WidgetService } from './widget.service';
 import { VisitorInfoService } from './visitor-info';
@@ -14,6 +16,8 @@ import { VisitorInfoService } from './visitor-info';
     JwtModule.register({}),
     TypeOrmModule.forFeature([ChannelConnection, Conversation, Message]),
     WebhooksModule,
+    StorageModule,
+    RealtimeModule,
   ],
   controllers: [WidgetController],
   providers: [WidgetService, VisitorInfoService],

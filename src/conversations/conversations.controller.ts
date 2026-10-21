@@ -2,7 +2,9 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -81,6 +83,15 @@ export class ConversationsController {
       dto.assigneeMemberId ?? null,
       workspace.workspaceMemberId,
     );
+  }
+
+  @Post(':id/typing')
+  @HttpCode(204)
+  async typing(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    await this.conversationsService.agentTyping(workspace.workspaceId, id);
   }
 
   @Post(':id/resolve')

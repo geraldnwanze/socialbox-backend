@@ -64,6 +64,8 @@ export class WebhookProcessor extends WorkerHost {
               externalUserId: event.contact.externalUserId,
               username: event.contact.username,
               displayName: event.contact.displayName,
+              fallbackDisplayName: event.contact.fallbackDisplayName,
+              email: event.contact.email,
               metadata: event.contact.metadata,
             });
 

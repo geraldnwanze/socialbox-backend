@@ -27,6 +27,9 @@ describe('WidgetService', () => {
       new JwtService({}),
       config as never,
       webhooks as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     return { service, connections, webhooks };
   }

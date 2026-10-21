@@ -22,6 +22,10 @@ export interface InboundIdentity {
   externalUserId: string;
   username?: string;
   displayName?: string;
+  /** A generated placeholder ("Website visitor 3D74"): used to create the contact, never to rename one. */
+  fallbackDisplayName?: string;
+  /** Learned from the channel (e.g. a live chat pre-chat form); only fills a blank. */
+  email?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -53,14 +57,27 @@ export class ContactsService {
       relations: ['contact'],
     });
     if (existing) {
-      if (
-        input.displayName &&
-        existing.contact.displayName !== input.displayName
-      ) {
-        await this.contacts.update(existing.contact.id, {
+      if (input.displayName && existing.displayName !== input.displayName) {
+        // The contact follows the channel's name only while nobody has renamed it by hand —
+        // otherwise every inbound message would undo an agent's edit.
+        const followsChannel =
+          !existing.contact.displayName ||
+          !existing.displayName || // the contact's name was only ever a placeholder
+          existing.contact.displayName === existing.displayName;
+        if (followsChannel) {
+          await this.contacts.update(existing.contact.id, {
+            displayName: input.displayName,
+          });
+          existing.contact.displayName = input.displayName;
+        }
+        await this.identities.update(existing.id, {
           displayName: input.displayName,
         });
-        existing.contact.displayName = input.displayName;
+        existing.displayName = input.displayName;
+      }
+      if (input.email && !existing.contact.email) {
+        await this.contacts.update(existing.contact.id, { email: input.email });
+        existing.contact.email = input.email;
       }
       if (input.metadata) {
         const merged = { ...existing.metadata, ...input.metadata };
@@ -75,7 +92,12 @@ export class ContactsService {
     const contact = await this.contacts.save(
       this.contacts.create({
         workspaceId: input.workspaceId,
-        displayName: input.displayName ?? input.username ?? 'Unknown',
+        displayName:
+          input.displayName ??
+          input.fallbackDisplayName ??
+          input.username ??
+          'Unknown',
+        email: input.email,
       }),
     );
     try {

@@ -466,4 +466,97 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
         .expect(403);
     });
   });
+
+  describe('live chat settings and public endpoints', () => {
+    const connect = (credentials: Record<string, unknown>) =>
+      api()
+        .post('/channels/LIVE_CHAT/connect')
+        .set(as(owner))
+        .send({ credentials });
+    let widgetKey: string;
+
+    it('rejects an invalid time zone or hours', async () => {
+      const tz = await connect({
+        hoursEnabled: 'true',
+        timezone: 'Mars/Base',
+      }).expect(400);
+      expect(tz.body.message).toContain('time zone');
+      const hours = await connect({
+        hoursEnabled: 'true',
+        hoursStart: '17:00',
+        hoursEnd: '09:00',
+      }).expect(400);
+      expect(hours.body.message).toContain('later than');
+    });
+
+    it('reports online/offline and the pre-chat settings in the public config', async () => {
+      const res = await connect({
+        title: 'Support',
+        askName: 'true',
+        askEmail: 'true',
+        hoursEnabled: 'true',
+        timezone: 'UTC',
+        hoursDays: '0,1,2,3,4,5,6',
+        hoursStart: '00:00',
+        hoursEnd: '23:59',
+      }).expect(201);
+      widgetKey = res.body.externalAccountId;
+      const open = await api().get(`/widget/${widgetKey}/config`).expect(200);
+      expect(open.body).toMatchObject({
+        askName: true,
+        askEmail: true,
+        online: true,
+      });
+
+      // Reconnecting keeps the key; an always-closed schedule flips it offline.
+      await connect({
+        hoursEnabled: 'true',
+        hoursDays: '',
+        hoursStart: '09:00',
+        hoursEnd: '17:00',
+      }).expect(400);
+      await connect({
+        hoursEnabled: 'true',
+        hoursDays: '0',
+        hoursStart: '00:00',
+        hoursEnd: '00:01',
+        timezone: 'UTC',
+      }).expect(201);
+      const closed = await api().get(`/widget/${widgetKey}/config`).expect(200);
+      expect(closed.body.online).toBe(false);
+    });
+
+    it('requires a visitor token for typing, uploads and polling', async () => {
+      await api().post('/widget/typing').expect(401);
+      await api().get('/widget/messages').expect(401);
+      await api()
+        .post('/widget/messages/upload')
+        .field('id', 'abcdefgh1')
+        .attach('file', Buffer.from('x'), 'a.txt')
+        .expect(401);
+    });
+
+    it('only lets agents of the same workspace signal typing', async () => {
+      const conn = await db
+        .getRepository(ChannelConnection)
+        .findOneByOrFail({ externalAccountId: widgetKey });
+      const contact = await db
+        .getRepository(Contact)
+        .save({ workspaceId: ws, displayName: 'Typist' });
+      const conversation = await db.getRepository(Conversation).save({
+        workspaceId: ws,
+        channelConnectionId: conn.id,
+        contactId: contact.id,
+        externalConversationId: 'typing-visitor',
+      });
+      await api()
+        .post(`/conversations/${conversation.id}/typing`)
+        .set(as(agent))
+        .expect(204);
+      await api()
+        .post(`/conversations/${conversation.id}/typing`)
+        .set(as(outsider, otherWs))
+        .expect(404);
+    });
+  });
 });

@@ -174,3 +174,111 @@ describe('ContactsService update/merge', () => {
     expect(manager.delete).toHaveBeenCalledWith(expect.anything(), 's');
   });
 });
+
+describe('ContactsService.findOrCreateFromIdentity names', () => {
+  const input = {
+    workspaceId: 'ws-1',
+    channelConnectionId: 'conn-1',
+    channel: ChannelType.TELEGRAM,
+    externalUserId: 'u1',
+  };
+  const build = (identity: object) => {
+    const contacts = { update: jest.fn() };
+    const identities = {
+      findOne: jest.fn().mockResolvedValue(identity),
+      update: jest.fn(),
+    };
+    const service = new ContactsService(
+      contacts as never,
+      identities as never,
+      {} as never,
+      {} as never,
+    );
+    return { service, contacts, identities };
+  };
+
+  it('follows a changed channel name while the contact was never renamed', async () => {
+    const { service, contacts, identities } = build({
+      id: 'i1',
+      displayName: 'Ann',
+      metadata: {},
+      contact: { id: 'c1', displayName: 'Ann' },
+    });
+    await service.findOrCreateFromIdentity({
+      ...input,
+      displayName: 'Ann Lee',
+    });
+    expect(contacts.update).toHaveBeenCalledWith('c1', {
+      displayName: 'Ann Lee',
+    });
+    expect(identities.update).toHaveBeenCalledWith('i1', {
+      displayName: 'Ann Lee',
+    });
+  });
+
+  it('keeps a name an agent edited by hand', async () => {
+    const { service, contacts, identities } = build({
+      id: 'i1',
+      displayName: 'Ann',
+      metadata: {},
+      contact: { id: 'c1', displayName: 'Ann (VIP)' },
+    });
+    await service.findOrCreateFromIdentity({
+      ...input,
+      displayName: 'Ann Lee',
+    });
+    expect(contacts.update).not.toHaveBeenCalled();
+    expect(identities.update).toHaveBeenCalledWith('i1', {
+      displayName: 'Ann Lee',
+    });
+  });
+
+  it('only fills a blank email', async () => {
+    const blank = build({
+      id: 'i1',
+      metadata: {},
+      contact: { id: 'c1', displayName: 'A' },
+    });
+    await blank.service.findOrCreateFromIdentity({
+      ...input,
+      email: 'a@x.com',
+    });
+    expect(blank.contacts.update).toHaveBeenCalledWith('c1', {
+      email: 'a@x.com',
+    });
+
+    const set = build({
+      id: 'i1',
+      metadata: {},
+      contact: { id: 'c1', displayName: 'A', email: 'keep@x.com' },
+    });
+    await set.service.findOrCreateFromIdentity({ ...input, email: 'a@x.com' });
+    expect(set.contacts.update).not.toHaveBeenCalled();
+  });
+
+  it('a later message without a real name never turns a name back into a placeholder', async () => {
+    const { service, contacts } = build({
+      id: 'i1',
+      displayName: 'Wendy',
+      metadata: {},
+      contact: { id: 'c1', displayName: 'Wendy' },
+    });
+    await service.findOrCreateFromIdentity({
+      ...input,
+      fallbackDisplayName: 'Website visitor 3D74',
+    });
+    expect(contacts.update).not.toHaveBeenCalled();
+  });
+
+  it('adopts the real name when the contact only had a placeholder', async () => {
+    const { service, contacts } = build({
+      id: 'i1',
+      metadata: {},
+      contact: { id: 'c1', displayName: 'Website visitor 3D74' },
+    });
+    await service.findOrCreateFromIdentity({ ...input, displayName: 'Wendy' });
+    expect(contacts.update).toHaveBeenCalledWith('c1', {
+      displayName: 'Wendy',
+    });
+  });
+});

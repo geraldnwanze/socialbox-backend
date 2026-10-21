@@ -75,6 +75,9 @@ export interface NormalizedInboundMessage {
     externalUserId: string;
     username?: string;
     displayName?: string;
+    /** Used only when the contact is first created and no real name is known (never overwrites). */
+    fallbackDisplayName?: string;
+    email?: string;
     /** Provider-specific facts about the person (e.g. IP/country/page for live chat). Merged
      *  into the contact identity's metadata on every message. */
     metadata?: Record<string, unknown>;
