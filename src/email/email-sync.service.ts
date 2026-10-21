@@ -21,6 +21,7 @@ import { StorageService } from '../storage/storage.service';
 import {
   htmlToText,
   isAutomatedMail,
+  parseBounce,
   sanitizeEmailHtml,
   stripQuotedReply,
 } from '../channels/adapters/email/email-parse';
@@ -195,6 +196,21 @@ export class EmailSyncService {
     const from = mail.from?.value?.[0];
     const fromAddress = from?.address?.toLowerCase();
     if (!fromAddress || fromAddress === creds.email) return null;
+
+    // A failure report for one of our replies becomes a status update on that reply — checked
+    // first, because it would otherwise be dropped as automated mail.
+    const bounce = parseBounce(mail, source);
+    if (bounce) {
+      return {
+        messageId: mail.messageId ?? `uid-${validity}-${uid}`,
+        fromAddress,
+        subject: (mail.subject ?? '').trim(),
+        text: '',
+        sentAt: (mail.date ?? new Date()).toISOString(),
+        bounceFor: bounce.messageId,
+        failureReason: bounce.reason,
+      };
+    }
     if (isAutomatedMail(mail.headers, fromAddress)) return null;
 
     const rawBody =

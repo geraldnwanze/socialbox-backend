@@ -12,7 +12,7 @@ import { EmailCredentials } from '../channels/adapters/email/email-config';
 import { createImapClient } from '../channels/adapters/email/email-clients';
 import { EmailSyncService } from './email-sync.service';
 
-const RECONCILE_EVERY_MS = 30_000;
+const RECONCILE_EVERY_MS = 10_000;
 const MIN_BACKOFF_MS = 5_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
 

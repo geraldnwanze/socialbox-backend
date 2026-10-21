@@ -37,6 +37,7 @@ export abstract class MetaMessagingAdapterBase implements ChannelAdapter {
     sendAudio: true,
     sendDocument: true,
     markAsRead: true,
+    markAsReadNotifiesCustomer: true,
     deliveryReceipts: true,
     readReceipts: true,
   };

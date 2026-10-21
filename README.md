@@ -291,6 +291,22 @@ mail is handed to the same idempotent webhook → queue pipeline as every other 
   `secret`, IMAP `greenmail:3143`, SMTP `greenmail:3025`, security *None*. `docker-compose.storage-test.yml`
   adds a local S3-compatible store so attachments work without a Cloudflare R2 account. Don't use these overlays in production.
 
+## Read receipts and delivery status
+
+When an agent opens a conversation, the customer's messages are marked read (once), and the channel is
+told in the background (queue `read-receipts`, worker):
+
+| Channel | Agent reads → | Delivery status of your replies |
+|---|---|---|
+| WhatsApp / Messenger / Instagram | "seen" sent to the customer | sent → delivered → read, from the provider's webhooks |
+| Live chat | the visitor sees "Seen" under their message | delivered when the widget fetches the reply, read when the chat is open and in view |
+| Email | the mail gets the IMAP `\Seen` flag in the shared mailbox (nothing is sent to the customer) | a bounce ("delivery failed" report) marks the reply **failed** with the server's reason; there is no "delivered" signal in email |
+| Telegram | not possible (the Bot API has no read receipts) | sent only |
+
+**Settings → Workspace → Read receipts** (admins) switches off everything the *customer* can see (WhatsApp/
+Messenger "seen", live chat "Seen"). Marking mail read in your own mailbox is unaffected. The setting is
+checked when the job runs, so turning it off also stops receipts that were already queued.
+
 ## Saved replies, contacts and analytics
 
 - **Saved replies** (Settings → Saved replies): admins manage reusable answers (`/shortcut`, title,

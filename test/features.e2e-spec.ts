@@ -559,4 +559,114 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
         .expect(404);
     });
   });
+
+  describe('read receipts', () => {
+    it('is on by default and only admins can change it', async () => {
+      const list = await api()
+        .get('/workspaces')
+        .set('authorization', `Bearer ${owner}`)
+        .expect(200);
+      expect(
+        list.body.find((w: { id: string }) => w.id === ws).sendReadReceipts,
+      ).toBe(true);
+
+      await api()
+        .patch('/workspace/settings')
+        .set(as(agent))
+        .send({ sendReadReceipts: false })
+        .expect(403);
+      const off = await api()
+        .patch('/workspace/settings')
+        .set(as(owner))
+        .send({ sendReadReceipts: false })
+        .expect(200);
+      expect(off.body.sendReadReceipts).toBe(false);
+      await api()
+        .patch('/workspace/settings')
+        .set(as(owner))
+        .send({ sendReadReceipts: true })
+        .expect(200);
+    });
+
+    it('rejects values that are not real booleans (no implicit "false" -> true)', async () => {
+      await api()
+        .patch('/workspace/settings')
+        .set(as(owner))
+        .send({ sendReadReceipts: 'false' })
+        .expect(400);
+      await api()
+        .patch('/workspace/settings')
+        .set(as(owner))
+        .send({ sendReadReceipts: 'yes' })
+        .expect(400);
+    });
+
+    it("opening a conversation marks the customer's messages read, once", async () => {
+      const conn = await db.getRepository(ChannelConnection).save({
+        workspaceId: ws,
+        type: ChannelType.TELEGRAM,
+        provider: 'TelegramAdapter',
+        status: ChannelConnectionStatus.CONNECTED,
+        externalAccountId: `bot-read-${stamp}`,
+        metadata: {},
+      });
+      const contact = await db
+        .getRepository(Contact)
+        .save({ workspaceId: ws, displayName: 'Reader' });
+      const conversation = await db.getRepository(Conversation).save({
+        workspaceId: ws,
+        channelConnectionId: conn.id,
+        contactId: contact.id,
+        externalConversationId: `read-${stamp}`,
+        unreadCount: 2,
+      });
+      const messages = db.getRepository(Message);
+      for (const [i, direction] of [
+        MessageDirection.INBOUND,
+        MessageDirection.INBOUND,
+        MessageDirection.OUTBOUND,
+      ].entries()) {
+        await messages.save({
+          workspaceId: ws,
+          conversationId: conversation.id,
+          channelConnectionId: conn.id,
+          messageType: MessageType.TEXT,
+          metadata: {},
+          direction,
+          senderType:
+            direction === MessageDirection.INBOUND
+              ? SenderType.CONTACT
+              : SenderType.AGENT,
+          status:
+            direction === MessageDirection.INBOUND
+              ? MessageStatus.RECEIVED
+              : MessageStatus.SENT,
+          sentAt: new Date(Date.now() - (3 - i) * 1000),
+          content: `m${i}`,
+          externalMessageId: `read-${stamp}-${i}`,
+        });
+      }
+
+      const res = await api()
+        .patch(`/conversations/${conversation.id}`)
+        .set(as(agent))
+        .send({ read: true })
+        .expect(200);
+      expect(res.body.unreadCount).toBe(0);
+      const rows = await messages.find({
+        where: { conversationId: conversation.id },
+        order: { sentAt: 'ASC' },
+      });
+      expect(rows.map((m) => [m.direction, m.status])).toEqual([
+        ['INBOUND', 'READ'],
+        ['INBOUND', 'READ'],
+        ['OUTBOUND', 'SENT'], // our own messages are untouched
+      ]);
+      await api()
+        .patch(`/conversations/${conversation.id}`)
+        .set(as(outsider, otherWs))
+        .send({ read: true })
+        .expect(404);
+    });
+  });
 });

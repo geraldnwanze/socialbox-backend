@@ -13,7 +13,7 @@ export const WIDGET_SCRIPT = String.raw`(function () {
   var storeKey = 'socialbox_widget_' + key;
 
   var MAX_FILE = 5 * 1024 * 1024;
-  var state = { open: false, token: null, config: null, server: [], pending: [], unread: false, seenAgent: 0, timer: null, online: true, agentTyping: false, profile: null, lastTyping: 0 };
+  var state = { open: false, token: null, config: null, server: [], pending: [], unread: false, seenAgent: 0, timer: null, online: true, agentTyping: false, profile: null, lastTyping: 0, reportedRead: 0 };
 
   try { state.token = localStorage.getItem(storeKey); } catch (e) {}
   try { state.profile = JSON.parse(localStorage.getItem(storeKey + '_profile') || 'null'); } catch (e) {}
@@ -77,6 +77,7 @@ export const WIDGET_SCRIPT = String.raw`(function () {
       '.attach{border:0;background:none;color:#6b7280;cursor:pointer;padding:0 4px;display:flex;align-items:center}' +
       '.attach svg{width:20px;height:20px}' +
       '.banner{background:#fef3c7;color:#92400e;font-size:12px;padding:8px 14px;display:none;border-bottom:1px solid #fde68a}' +
+      '.seen{align-self:flex-end;font-size:11px;color:#6b7280;margin-top:-4px}' +
       '.typing{align-self:flex-start;font-size:12px;color:#6b7280;padding:2px 4px}' +
       '.file{display:block;margin-top:4px;font-size:12px;color:inherit;text-decoration:underline;word-break:break-all}' +
       '.pre{flex:1;padding:18px;display:none;flex-direction:column;gap:10px;background:#f8fafc;overflow-y:auto}' +
@@ -265,10 +266,18 @@ export const WIDGET_SCRIPT = String.raw`(function () {
     if (items.length === 0 && state.pending.length === 0) {
       el.list.appendChild(bubbleEl(state.config.greeting, 'agent'));
     }
-    items.forEach(function (m) {
+    var lastSeen = -1;
+    items.forEach(function (m, i) { if (m.direction === 'INBOUND' && m.seen) lastSeen = i; });
+    items.forEach(function (m, i) {
       var node = bubbleEl(m.content, m.direction === 'INBOUND' ? 'me' : 'agent');
       addFiles(node, m.attachments);
       el.list.appendChild(node);
+      if (i === lastSeen) {
+        var seenNote = document.createElement('div');
+        seenNote.className = 'seen';
+        seenNote.textContent = 'Seen';
+        el.list.appendChild(seenNote);
+      }
     });
     state.pending.forEach(function (p) {
       var node = bubbleEl(p.content, 'me' + (p.failed ? ' failed' : ''));
@@ -311,6 +320,11 @@ export const WIDGET_SCRIPT = String.raw`(function () {
         state.online = data.online !== false;
         state.agentTyping = !!data.agentTyping;
         var agent = data.messages.filter(function (m) { return m.direction === 'OUTBOUND'; }).length;
+        // Open and in view: tell the team their messages were read (once per new agent message).
+        if (state.open && !document.hidden && agent > state.reportedRead) {
+          state.reportedRead = agent;
+          request('/widget/read', 'POST').catch(function () {});
+        }
         if (!state.open && agent > state.seenAgent) state.unread = true;
         if (state.open || !state.unread) state.seenAgent = agent;
         el.dot.style.display = state.unread && !state.open ? 'block' : 'none';

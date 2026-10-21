@@ -40,6 +40,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
     sendAudio: true,
     sendDocument: true,
     markAsRead: true,
+    markAsReadNotifiesCustomer: true,
     deliveryReceipts: true,
     readReceipts: true,
   };

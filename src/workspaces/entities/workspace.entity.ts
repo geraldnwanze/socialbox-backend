@@ -24,6 +24,11 @@ export class Workspace {
   @Column({ nullable: true })
   logoUrl?: string;
 
+  /** Tell customers when an agent has read their message (WhatsApp/Messenger "seen", live chat
+   *  "Seen"). Marking mail read inside the agents' own mailbox is not affected. */
+  @Column({ default: true })
+  sendReadReceipts: boolean;
+
   @OneToMany(() => WorkspaceMember, (member) => member.workspace)
   members: WorkspaceMember[];
 

@@ -5,6 +5,7 @@ import { WorkspaceMember } from './entities/workspace-member.entity';
 import { WorkspacesService } from './workspaces.service';
 import { WorkspacesController } from './workspaces.controller';
 import { WorkspaceMembersController } from './workspace-members.controller';
+import { WorkspaceSettingsController } from './workspace-settings.controller';
 import { UsersModule } from '../users/users.module';
 import { AccessControlModule } from '../common/access-control/access-control.module';
 
@@ -14,7 +15,11 @@ import { AccessControlModule } from '../common/access-control/access-control.mod
     UsersModule,
     AccessControlModule,
   ],
-  controllers: [WorkspacesController, WorkspaceMembersController],
+  controllers: [
+    WorkspacesController,
+    WorkspaceMembersController,
+    WorkspaceSettingsController,
+  ],
   providers: [WorkspacesService],
   exports: [WorkspacesService],
 })

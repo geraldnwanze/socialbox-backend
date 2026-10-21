@@ -1,4 +1,5 @@
 import sanitizeHtml from 'sanitize-html';
+import type { ParsedMail } from 'mailparser';
 
 /** Pure helpers for turning raw mail into inbox-friendly pieces. */
 
@@ -160,4 +161,57 @@ export function sanitizeEmailHtml(html: string): string | null {
   }).trim();
   if (!clean || clean.length > MAX_HTML_CHARS) return null;
   return clean;
+}
+
+export interface Bounce {
+  /** Message-ID of the mail we sent that could not be delivered (with angle brackets). */
+  messageId: string;
+  reason: string;
+}
+
+/**
+ * Recognizes a permanent delivery-failure report (RFC 3464 DSN, what every mail server sends when
+ * it cannot deliver) and pulls out which of our mails failed and why. Delay notices ("still
+ * trying") and anything unrecognizable return null — a failure is only reported when certain.
+ */
+export function parseBounce(mail: ParsedMail, source: Buffer): Bounce | null {
+  const contentType = mail.headers.get('content-type') as
+    { value?: string; params?: Record<string, string> } | undefined;
+  if (
+    contentType?.value !== 'multipart/report' ||
+    contentType.params?.['report-type'] !== 'delivery-status'
+  ) {
+    return null;
+  }
+
+  const raw = source.toString('utf8');
+  const action = /^Action:\s*(\w+)/im.exec(raw)?.[1]?.toLowerCase();
+  const status = /^Status:\s*(\d\.\d+\.\d+)/im.exec(raw)?.[1];
+  const permanent = action === 'failed' || (!action && status?.startsWith('5'));
+  if (!permanent) return null;
+
+  // Our original mail is returned (whole or just its headers) as an attachment.
+  const original = mail.attachments.find((a) =>
+    ['message/rfc822', 'text/rfc822-headers'].includes(a.contentType),
+  );
+  const messageId = original
+    ? /^Message-ID:\s*(<[^>\r\n]+>)/im.exec(
+        original.content.toString('utf8'),
+      )?.[1]
+    : undefined;
+  if (!messageId) return null;
+
+  // "Diagnostic-Code: smtp; 550 5.1.1 ..." may continue on indented lines.
+  const diagnostic = /^Diagnostic-Code:\s*([^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*)/im
+    .exec(raw)?.[1]
+    ?.replace(/\r?\n[ \t]+/g, ' ')
+    .replace(/^smtp;\s*/i, '');
+  const reason = (
+    diagnostic || (status ? `Delivery failed (${status})` : 'Delivery failed')
+  )
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .trim()
+    .slice(0, 300);
+  return { messageId, reason };
 }

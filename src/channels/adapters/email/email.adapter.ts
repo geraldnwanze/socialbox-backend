@@ -36,6 +36,9 @@ export interface EmailInboundPayload {
   html?: string;
   inReplyTo?: string;
   sentAt: string;
+  /** Set when this "mail" is a failure report for one of our replies, not a customer message. */
+  bounceFor?: string;
+  failureReason?: string;
   attachments?: {
     storageKey: string;
     mimeType: string;
@@ -66,7 +69,9 @@ export class EmailAdapter implements ChannelAdapter {
     sendVideo: true,
     sendAudio: true,
     sendDocument: true,
-    markAsRead: false,
+    // Sets the \Seen flag on the customer's mails in the agents' own mailbox (no receipt is sent).
+    markAsRead: true,
+    // Failure notices (bounces) are picked up from the mailbox; there is no "delivered" signal.
     deliveryReceipts: false,
     readReceipts: false,
   };
@@ -215,6 +220,33 @@ export class EmailAdapter implements ChannelAdapter {
     }
   }
 
+  async markAsRead(
+    connection: ChannelConnection,
+    conversation: UnifiedConversation,
+  ): Promise<void> {
+    const ids = conversation.readExternalMessageIds ?? [];
+    if (ids.length === 0) return;
+    const creds = connection.credentials as unknown as EmailCredentials;
+    const client = await createImapClient(creds, this.allowPrivate);
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock('INBOX');
+      try {
+        for (const id of ids.slice(-50)) {
+          await client.messageFlagsAdd({ header: { 'message-id': id } }, [
+            '\\Seen',
+          ]);
+        }
+      } finally {
+        lock.release();
+      }
+    } catch (error) {
+      throw describeMailError(error, 'IMAP', creds.imapHost);
+    } finally {
+      await client.logout().catch(() => undefined);
+    }
+  }
+
   // Inbound mail is fetched by our own poller, never pushed to a public endpoint.
   verifySignature(): boolean {
     return false;
@@ -234,6 +266,19 @@ export class EmailAdapter implements ChannelAdapter {
     _connection: ChannelConnection,
   ): Promise<NormalizedWebhookEvent[]> {
     const p = payload as EmailInboundPayload;
+    if (p.bounceFor) {
+      // The mail server could not deliver one of our replies: surface it on that message.
+      return [
+        {
+          kind: 'MESSAGE_STATUS',
+          externalMessageId: p.bounceFor,
+          status: MessageStatus.FAILED,
+          occurredAt: new Date(p.sentAt),
+          failureReason: p.failureReason ?? 'Delivery failed',
+          raw: p,
+        },
+      ];
+    }
     const address = p.fromAddress.toLowerCase();
     return [
       {

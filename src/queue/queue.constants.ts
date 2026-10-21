@@ -4,6 +4,7 @@ export enum QueueName {
   MEDIA = 'media',
   NOTIFICATIONS = 'notifications',
   EMAIL_SYNC = 'email-sync',
+  READ_RECEIPTS = 'read-receipts',
 }
 
 export enum WebhookJobName {
@@ -11,6 +12,10 @@ export enum WebhookJobName {
 }
 
 export enum OutboundMessageJobName {
+  SEND = 'send',
+}
+
+export enum ReadReceiptJobName {
   SEND = 'send',
 }
 
@@ -28,6 +33,12 @@ export interface ProcessWebhookEventJob {
 
 export interface SendOutboundMessageJob {
   messageId: string;
+}
+
+export interface SendReadReceiptJob {
+  conversationId: string;
+  /** Provider ids of the inbound messages the agent just read, oldest first. */
+  externalMessageIds: string[];
 }
 
 export interface MirrorMediaJob {

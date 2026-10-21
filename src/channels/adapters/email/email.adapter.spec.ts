@@ -102,6 +102,29 @@ describe('EmailAdapter.handleWebhook', () => {
   });
 });
 
+describe('EmailAdapter bounces', () => {
+  it('turns a failure report into a FAILED status on the reply that bounced', async () => {
+    const [event] = await adapter.handleWebhook(
+      {
+        messageId: '<bounce@mx>',
+        fromAddress: 'mailer-daemon@mx.example.com',
+        subject: 'Delivery Status Notification',
+        text: '',
+        sentAt: '2026-10-20T10:00:00.000Z',
+        bounceFor: '<orig-123@example.com>',
+        failureReason: '550 5.1.1 No such user',
+      },
+      connection,
+    );
+    expect(event).toMatchObject({
+      kind: 'MESSAGE_STATUS',
+      externalMessageId: '<orig-123@example.com>',
+      status: 'FAILED',
+      failureReason: '550 5.1.1 No such user',
+    });
+  });
+});
+
 describe('EmailAdapter.sendMessage', () => {
   const send = (sendMail: jest.Mock) => {
     (clients.createSmtpTransport as jest.Mock).mockResolvedValue({

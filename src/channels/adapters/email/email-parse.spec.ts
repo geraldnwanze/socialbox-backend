@@ -1,8 +1,10 @@
+import { simpleParser } from 'mailparser';
 import {
   baseSubject,
   htmlToText,
   isAutomatedMail,
   nameFromAddress,
+  parseBounce,
   replySubject,
   sanitizeEmailHtml,
   stripQuotedReply,
@@ -117,5 +119,62 @@ describe('sanitizeEmailHtml', () => {
   it('returns null when nothing remains or it is huge', () => {
     expect(sanitizeEmailHtml('<script>x</script>')).toBeNull();
     expect(sanitizeEmailHtml(`<p>${'a'.repeat(150_000)}</p>`)).toBeNull();
+  });
+});
+
+describe('parseBounce', () => {
+  const dsn = (action: string, extra = '') =>
+    [
+      'From: Mail Delivery System <MAILER-DAEMON@mx.example.com>',
+      'To: support@example.com',
+      'Subject: Delivery Status Notification',
+      'Message-ID: <bounce-1@mx.example.com>',
+      'MIME-Version: 1.0',
+      'Content-Type: multipart/report; report-type=delivery-status; boundary="B"',
+      '',
+      '--B',
+      'Content-Type: text/plain',
+      '',
+      'Could not deliver.',
+      '--B',
+      'Content-Type: message/delivery-status',
+      '',
+      'Reporting-MTA: dns; mx.example.com',
+      '',
+      'Final-Recipient: rfc822; nobody@customer.test',
+      `Action: ${action}`,
+      'Status: 5.1.1',
+      'Diagnostic-Code: smtp; 550 5.1.1 The email account',
+      '  that you tried to reach does not exist.',
+      extra,
+      '--B',
+      'Content-Type: message/rfc822',
+      '',
+      'Message-ID: <orig-123@example.com>',
+      'From: support@example.com',
+      'To: nobody@customer.test',
+      'Subject: Re: Hello',
+      '',
+      'Hi there',
+      '--B--',
+      '',
+    ].join('\r\n');
+
+  const parse = async (raw: string) => {
+    const source = Buffer.from(raw);
+    return parseBounce(await simpleParser(source), source);
+  };
+
+  it('finds which of our mails failed and why, joining a wrapped diagnostic', async () => {
+    expect(await parse(dsn('failed'))).toEqual({
+      messageId: '<orig-123@example.com>',
+      reason:
+        '550 5.1.1 The email account that you tried to reach does not exist.',
+    });
+  });
+
+  it('ignores delay notices and ordinary mail', async () => {
+    expect(await parse(dsn('delayed'))).toBeNull();
+    expect(await parse('From: a@b.c\r\nSubject: hi\r\n\r\nhello')).toBeNull();
   });
 });

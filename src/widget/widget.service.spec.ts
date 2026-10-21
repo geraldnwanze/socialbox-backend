@@ -30,6 +30,7 @@ describe('WidgetService', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     return { service, connections, webhooks };
   }
@@ -128,5 +129,89 @@ describe('WidgetService', () => {
     });
 
     expect(webhooks.ingest.mock.calls[0][2].visitor.pageUrl).toBeUndefined();
+  });
+
+  describe('delivery and read status', () => {
+    const session = {
+      visitorId: 'v1',
+      connection: { id: 'conn-1', workspaceId: 'w1', metadata: {} },
+    } as never;
+
+    function buildStatus(rows: object[], sendReadReceipts = true) {
+      const update = jest.fn();
+      const realtime = { toWorkspace: jest.fn(), toConversation: jest.fn() };
+      const service = new WidgetService(
+        {} as never,
+        { findOne: jest.fn().mockResolvedValue({ id: 'c1' }) } as never,
+        { find: jest.fn().mockResolvedValue(rows), update } as never,
+        new JwtService({}),
+        { get: jest.fn() } as never,
+        {} as never,
+        { getSignedDownloadUrl: jest.fn() } as never,
+        realtime as never,
+        {} as never,
+        { findOne: jest.fn().mockResolvedValue({ sendReadReceipts }) } as never,
+      );
+      return { service, update, realtime };
+    }
+    const agentMsg = (status: string) => ({
+      id: 'a1',
+      workspaceId: 'w1',
+      conversationId: 'c1',
+      direction: 'OUTBOUND',
+      status,
+      attachments: [],
+    });
+
+    it('marks agent messages DELIVERED when the widget fetches them, and tells the agents', async () => {
+      const { service, update, realtime } = buildStatus([agentMsg('SENT')]);
+      await service.listMessages(session);
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: expect.anything() }),
+        { status: 'DELIVERED' },
+      );
+      expect(realtime.toWorkspace).toHaveBeenCalledWith(
+        'w1',
+        'message.status_changed',
+        expect.objectContaining({ status: 'DELIVERED' }),
+      );
+    });
+
+    it('never moves a READ message backwards', async () => {
+      const { service, update } = buildStatus([agentMsg('READ')]);
+      await service.listMessages(session);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('marks everything READ when the visitor has the chat in view', async () => {
+      const { service, update } = buildStatus([
+        agentMsg('SENT'),
+        { ...agentMsg('DELIVERED'), id: 'a2' },
+      ]);
+      await service.markAgentMessagesRead(session);
+      expect(update).toHaveBeenCalledWith(expect.anything(), {
+        status: 'READ',
+      });
+    });
+
+    it('shows "seen" on the visitor\'s messages only when the workspace shares read receipts', async () => {
+      const inbound = {
+        id: 'i1',
+        workspaceId: 'w1',
+        conversationId: 'c1',
+        direction: 'INBOUND',
+        status: 'READ',
+        externalMessageId: 'x',
+        attachments: [],
+      };
+      expect(
+        (await buildStatus([inbound], true).service.listMessages(session))[0]
+          .seen,
+      ).toBe(true);
+      expect(
+        (await buildStatus([inbound], false).service.listMessages(session))[0]
+          .seen,
+      ).toBe(false);
+    });
   });
 });

@@ -66,6 +66,20 @@ export class WorkspacesService {
     return { ...membership.workspace, role: membership.role };
   }
 
+  async updateSettings(
+    workspaceId: string,
+    settings: { sendReadReceipts?: boolean },
+  ): Promise<Workspace> {
+    const workspace = await this.workspaces.findOne({
+      where: { id: workspaceId },
+    });
+    if (!workspace) throw new ResourceNotFoundException('Workspace');
+    if (settings.sendReadReceipts !== undefined) {
+      workspace.sendReadReceipts = settings.sendReadReceipts;
+    }
+    return this.workspaces.save(workspace);
+  }
+
   listMembers(workspaceId: string) {
     return this.members.find({
       where: { workspaceId },

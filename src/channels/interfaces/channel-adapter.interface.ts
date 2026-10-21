@@ -12,6 +12,9 @@ export interface ChannelCapabilities {
   markAsRead: boolean;
   deliveryReceipts: boolean;
   readReceipts: boolean;
+  /** markAsRead is visible to the customer (so the workspace can turn it off), as opposed to only
+   *  tidying the agents' own side such as an email mailbox's "read" flag. */
+  markAsReadNotifiesCustomer?: boolean;
 }
 
 /** The minimal view of a conversation an adapter needs in order to send into it. */
@@ -24,6 +27,8 @@ export interface UnifiedConversation {
   lastInboundExternalMessageId?: string;
   /** Subject of that inbound message (email only) so the reply can be threaded under it. */
   lastInboundSubject?: string;
+  /** Every inbound message just marked read (the provider ids), for providers that track per-message. */
+  readExternalMessageIds?: string[];
 }
 
 export interface OutboundAttachment {

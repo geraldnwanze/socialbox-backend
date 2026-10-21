@@ -12,6 +12,8 @@ import { TagsModule } from '../tags/tags.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AccessControlModule } from '../common/access-control/access-control.module';
+import { QueueModule } from '../queue/queue.module';
+import { Message } from '../messages/entities/message.entity';
 
 @Module({
   imports: [
@@ -21,7 +23,9 @@ import { AccessControlModule } from '../common/access-control/access-control.mod
       ConversationAssignment,
       ContactIdentity,
       WorkspaceMember,
+      Message,
     ]),
+    QueueModule,
     forwardRef(() => MessagesModule),
     TagsModule,
     RealtimeModule,

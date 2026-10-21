@@ -151,6 +151,20 @@ export class WidgetController {
     await this.widgetService.visitorTyping(session);
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Post('widget/read')
+  @HttpCode(204)
+  async read(
+    @Headers('authorization') authorization?: string,
+    @Headers('origin') origin?: string,
+  ) {
+    const session = await this.widgetService.authenticate(
+      bearer(authorization),
+      origin,
+    );
+    await this.widgetService.markAgentMessagesRead(session);
+  }
+
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('widget/messages/upload')
   @HttpCode(202)

@@ -23,6 +23,7 @@ import {
 } from '../channels/adapters/live-chat/live-chat.adapter';
 import { Conversation } from '../conversations/entities/conversation.entity';
 import { Message } from '../messages/entities/message.entity';
+import { Workspace } from '../workspaces/entities/workspace.entity';
 import {
   MessageDirection,
   MessageStatus,
@@ -52,6 +53,8 @@ export interface WidgetMessageView {
   content: string;
   sentAt: Date;
   attachments: { name: string; size: number | null; url: string }[];
+  /** Visitor's own message that an agent has read (only when the workspace shares read receipts). */
+  seen: boolean;
 }
 
 const VISITOR_TOKEN_TTL = '90d';
@@ -72,6 +75,8 @@ export class WidgetService {
     private readonly storage: StorageService,
     private readonly realtime: RealtimeService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @InjectRepository(Workspace)
+    private readonly workspaces: Repository<Workspace>,
   ) {}
 
   private async findConnectedByKey(key: string): Promise<ChannelConnection> {
@@ -180,6 +185,56 @@ export class WidgetService {
     };
   }
 
+  /**
+   * Moves agent messages forward SENT -> DELIVERED -> READ (never backwards) and tells the agents'
+   * inboxes, whose message bubbles show the matching ticks.
+   */
+  private async advanceAgentMessages(
+    rows: Message[],
+    to: MessageStatus.DELIVERED | MessageStatus.READ,
+  ): Promise<void> {
+    const from =
+      to === MessageStatus.DELIVERED
+        ? [MessageStatus.SENT]
+        : [MessageStatus.SENT, MessageStatus.DELIVERED];
+    const due = rows.filter(
+      (m) =>
+        m.direction === MessageDirection.OUTBOUND && from.includes(m.status),
+    );
+    if (due.length === 0) return;
+    await this.messages.update(
+      { id: In(due.map((m) => m.id)), status: In(from) },
+      { status: to },
+    );
+    for (const message of due) {
+      message.status = to;
+      this.realtime.toWorkspace(
+        message.workspaceId,
+        RealtimeEvent.MESSAGE_STATUS_CHANGED,
+        message,
+      );
+      this.realtime.toConversation(
+        message.conversationId,
+        RealtimeEvent.MESSAGE_STATUS_CHANGED,
+        message,
+      );
+    }
+  }
+
+  /** The visitor has the chat open and in view: everything the agents sent so far is read. */
+  async markAgentMessagesRead(session: VisitorSession): Promise<void> {
+    const conversation = await this.findConversation(session);
+    if (!conversation) return;
+    const rows = await this.messages.find({
+      where: {
+        conversationId: conversation.id,
+        direction: MessageDirection.OUTBOUND,
+        status: In([MessageStatus.SENT, MessageStatus.DELIVERED]),
+      },
+    });
+    await this.advanceAgentMessages(rows, MessageStatus.READ);
+  }
+
   /** Tells the agents' inboxes the visitor is typing. Cheap to call often: it emits at most once
    *  every couple of seconds per conversation. */
   async visitorTyping(session: VisitorSession): Promise<void> {
@@ -221,6 +276,15 @@ export class WidgetService {
       take: HISTORY_LIMIT,
     });
 
+    // Fetching an agent's message is what "delivered" means for a widget.
+    await this.advanceAgentMessages(rows, MessageStatus.DELIVERED);
+
+    const workspace = await this.workspaces.findOne({
+      where: { id: session.connection.workspaceId },
+      select: { id: true, sendReadReceipts: true },
+    });
+    const shareReceipts = workspace?.sendReadReceipts ?? false;
+
     return Promise.all(
       rows.reverse().map(async (m) => ({
         id: m.id,
@@ -231,6 +295,10 @@ export class WidgetService {
         direction: m.direction,
         content: m.content ?? '',
         sentAt: m.sentAt,
+        seen:
+          shareReceipts &&
+          m.direction === MessageDirection.INBOUND &&
+          m.status === MessageStatus.READ,
         attachments: await Promise.all(
           (m.attachments ?? [])
             .filter((a) => a.storageKey)

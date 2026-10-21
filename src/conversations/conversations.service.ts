@@ -1,8 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Conversation } from './entities/conversation.entity';
+import { Message } from '../messages/entities/message.entity';
+import {
+  MessageDirection,
+  MessageStatus,
+} from '../messages/enums/message.enums';
+import { QueueName, ReadReceiptJobName } from '../queue/queue.constants';
 import { ConversationParticipant } from './entities/conversation-participant.entity';
 import { ConversationAssignment } from './entities/conversation-assignment.entity';
 import { ConversationStatus } from './enums/conversation-status.enum';
@@ -28,6 +36,9 @@ export class ConversationsService {
     private readonly assignments: Repository<ConversationAssignment>,
     @InjectRepository(ContactIdentity)
     private readonly contactIdentities: Repository<ContactIdentity>,
+    @InjectRepository(Message)
+    private readonly messages: Repository<Message>,
+    @InjectQueue(QueueName.READ_RECEIPTS) private readonly readReceipts: Queue,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly realtimeService: RealtimeService,
     private readonly notificationsService: NotificationsService,
@@ -322,6 +333,32 @@ export class ConversationsService {
     );
     conversation.unreadCount = 0;
     await this.conversations.save(conversation);
+
+    // Every customer message up to now has been seen by an agent: record it, and let the channel
+    // know (WhatsApp/Messenger "seen", email read flag) — once, not on every later visit.
+    const newlyRead = await this.messages
+      .createQueryBuilder()
+      .update(Message)
+      .set({ status: MessageStatus.READ })
+      .where('conversation_id = :conversationId', { conversationId })
+      .andWhere('direction = :direction', {
+        direction: MessageDirection.INBOUND,
+      })
+      .andWhere('status = :status', { status: MessageStatus.RECEIVED })
+      .returning('external_message_id, sent_at')
+      .execute();
+    const ids = (
+      newlyRead.raw as { external_message_id: string | null; sent_at: Date }[]
+    )
+      .filter((row) => row.external_message_id)
+      .sort((a, b) => +new Date(a.sent_at) - +new Date(b.sent_at))
+      .map((row) => row.external_message_id as string);
+    if (ids.length > 0) {
+      await this.readReceipts.add(ReadReceiptJobName.SEND, {
+        conversationId,
+        externalMessageIds: ids,
+      });
+    }
     this.realtimeService.toWorkspace(
       workspaceId,
       RealtimeEvent.CONVERSATION_UPDATED,
