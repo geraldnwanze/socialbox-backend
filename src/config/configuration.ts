@@ -8,6 +8,15 @@ export default () => ({
     .map((origin) => origin.trim())
     .filter(Boolean),
 
+  network: {
+    // How many reverse proxies sit in front of the API (ngrok/Nginx = 1; Cloudflare + Nginx = 2).
+    // Express uses this to read the real client IP from X-Forwarded-For instead of the proxy's.
+    trustProxyHops: parseInt(process.env.TRUST_PROXY_HOPS ?? '1', 10),
+    // Only enable when the API is reachable *exclusively* through Cloudflare: otherwise anyone
+    // can send a forged CF-Connecting-IP / CF-IPCountry header.
+    trustCloudflareHeaders: process.env.TRUST_CLOUDFLARE_HEADERS === 'true',
+  },
+
   database: {
     url: process.env.DATABASE_URL,
   },

@@ -21,6 +21,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { HealthModule } from './health/health.module';
+import { WidgetModule } from './widget/widget.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { HealthModule } from './health/health.module';
     NotificationsModule,
     AttachmentsModule,
     RealtimeModule,
+    WidgetModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

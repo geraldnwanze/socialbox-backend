@@ -64,6 +64,7 @@ export class WebhookProcessor extends WorkerHost {
               externalUserId: event.contact.externalUserId,
               username: event.contact.username,
               displayName: event.contact.displayName,
+              metadata: event.contact.metadata,
             });
 
           const { conversation } =

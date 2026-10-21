@@ -22,12 +22,32 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
   const configService = app.get(ConfigService);
 
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .set('trust proxy', configService.get<number>('network.trustProxyHops'));
   app.useWebSocketAdapter(new RedisIoAdapter(app, app.get(REDIS_CLIENT)));
   app.use(helmet());
   app.use(new RequestIdMiddleware().use);
-  app.enableCors({
+  const dashboardCors = {
     origin: configService.get<string[]>('corsOrigins'),
     credentials: true,
+  };
+  // The chat widget runs on customers' own websites, so its public endpoints must accept any
+  // origin (each endpoint enforces the workspace's allowed-origins list itself). Everything else
+  // stays restricted to the dashboard origins. No credentials/cookies are involved for the widget.
+  app.enableCors((req, callback) => {
+    const isWidget = String(req.url ?? '').startsWith('/widget');
+    callback(
+      null,
+      isWidget
+        ? {
+            origin: true,
+            credentials: false,
+            allowedHeaders: ['authorization', 'content-type'],
+          }
+        : dashboardCors,
+    );
   });
   app.useGlobalPipes(
     new ValidationPipe({

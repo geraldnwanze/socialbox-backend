@@ -11,6 +11,7 @@ import { WhatsAppAdapter } from './adapters/whatsapp/whatsapp.adapter';
 import { MessengerAdapter } from './adapters/meta/messenger.adapter';
 import { InstagramAdapter } from './adapters/meta/instagram.adapter';
 import { XAdapter } from './adapters/x/x.adapter';
+import { LiveChatAdapter } from './adapters/live-chat/live-chat.adapter';
 import { EncryptionService } from '../common/crypto/encryption.service';
 import { AccessControlModule } from '../common/access-control/access-control.module';
 
@@ -30,6 +31,7 @@ import { AccessControlModule } from '../common/access-control/access-control.mod
     MessengerAdapter,
     InstagramAdapter,
     XAdapter,
+    LiveChatAdapter,
     {
       provide: CHANNEL_ADAPTER_LIST,
       useFactory: (
@@ -38,13 +40,15 @@ import { AccessControlModule } from '../common/access-control/access-control.mod
         messenger: MessengerAdapter,
         instagram: InstagramAdapter,
         x: XAdapter,
-      ) => [telegram, whatsapp, messenger, instagram, x],
+        liveChat: LiveChatAdapter,
+      ) => [telegram, whatsapp, messenger, instagram, x, liveChat],
       inject: [
         TelegramAdapter,
         WhatsAppAdapter,
         MessengerAdapter,
         InstagramAdapter,
         XAdapter,
+        LiveChatAdapter,
       ],
     },
   ],

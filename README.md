@@ -1,7 +1,7 @@
 # SocialBox — Unified Social Inbox (Backend)
 
 All your social messages. One inbox. This is the NestJS API + worker for a unified social/messaging
-inbox SaaS: businesses connect channels (WhatsApp, Telegram, Facebook Messenger, Instagram — see
+inbox SaaS: businesses connect channels (WhatsApp, Telegram, Facebook Messenger, Instagram, and a built-in website live chat widget — see
 [docs/social-platform-capabilities.md](docs/social-platform-capabilities.md) for what's actually
 functional and why), receive customer messages in one place, and reply from a shared team inbox.
 
@@ -187,6 +187,44 @@ Full detail, including exactly what's blocked and why, is in
    secret manager — never bake them into the image.
 6. Point `WHATSAPP_*`/`META_*` verify tokens and webhook URLs at the production domain in each
    platform's developer dashboard.
+
+## Live chat widget
+
+A website chat widget is a built-in channel (`LIVE_CHAT`) — no third-party account or review needed.
+
+1. In the dashboard: **Settings → Channels → Live chat → Connect**. Optionally set the title,
+   greeting, brand color and the websites allowed to use it.
+2. Copy the snippet shown on the card and paste it before `</body>` on your site:
+   ```html
+   <script src="https://YOUR-API/widget.js" data-key="wk_..." async></script>
+   ```
+3. Visitors' messages arrive in the shared inbox like any other channel; replies go back to the widget.
+
+How it works: the script (`src/widget/widget-script.ts`, dependency-free, Shadow DOM) talks to public
+endpoints under `/widget/*`. A visitor gets a signed token (stored in their browser's localStorage) and
+messages go through the same idempotent webhook → queue → worker pipeline as every other channel. The
+widget **polls** every 3s while open (15s while closed) rather than holding a socket.
+
+Things to know:
+- **Allowed websites** is a soft control: browsers always send an honest `Origin` header, so it stops
+  your key being reused on other people's sites, but a non-browser client can send anything. The widget
+  key itself is public by design.
+- Text only for now (no attachments), and visitors are anonymous ("Website visitor ABCD") — there is no
+  pre-chat form or identify API yet.
+- **Visitor details**: agents see the visitor's IP address, country (flag + name) and the page they
+  were on, in the customer panel. IP and country come from the server's view of the request, never
+  from the page: `TRUST_PROXY_HOPS` must match how many proxies sit in front of the API (wrong value =
+  you'd record your proxy's IP). Country is resolved offline with a bundled GeoIP database
+  (DB-IP "lite" country data via the `@ip-location-db/dbip-country-mmdb` package, ~8 MB, country-level; it's
+  refreshed by updating that package — licensed CC BY 4.0, hence the "IP geolocation by DB-IP" credit in the panel), so no
+  visitor IPs are sent to third parties; private/localhost addresses have no country. If you use
+  Cloudflare, set `TRUST_CLOUDFLARE_HEADERS=true` to use its `CF-Connecting-IP`/`CF-IPCountry`
+  instead — only when the API is not reachable except through Cloudflare. The page URL is supplied by
+  the visitor's browser (display only, sanitized to plain http(s)). IP addresses are personal data
+  under GDPR-style laws: mention them in your privacy policy and decide how long to keep them.
+- Disconnecting disables the widget immediately; reconnecting keeps the **same key**, so embedded
+  snippets don't need updating.
+- Public endpoints are rate limited per IP (20 sessions/min, 30 sends/min, 60 polls/min).
 
 ## Known limitations
 

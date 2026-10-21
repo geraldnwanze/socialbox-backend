@@ -5,6 +5,7 @@ export enum ChannelType {
   INSTAGRAM = 'INSTAGRAM',
   X = 'X',
   TIKTOK = 'TIKTOK',
+  LIVE_CHAT = 'LIVE_CHAT',
 }
 
 export enum ChannelConnectionStatus {

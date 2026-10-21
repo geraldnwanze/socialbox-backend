@@ -21,5 +21,6 @@ import { ChannelsModule } from '../channels/channels.module';
     MetaWebhookController,
   ],
   providers: [WebhooksService],
+  exports: [WebhooksService],
 })
 export class WebhooksModule {}

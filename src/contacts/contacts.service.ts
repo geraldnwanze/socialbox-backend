@@ -17,6 +17,7 @@ export interface InboundIdentity {
   externalUserId: string;
   username?: string;
   displayName?: string;
+  metadata?: Record<string, unknown>;
 }
 
 @Injectable()
@@ -53,6 +54,13 @@ export class ContactsService {
         });
         existing.contact.displayName = input.displayName;
       }
+      if (input.metadata) {
+        const merged = { ...existing.metadata, ...input.metadata };
+        if (JSON.stringify(merged) !== JSON.stringify(existing.metadata)) {
+          await this.identities.update(existing.id, { metadata: merged });
+          existing.metadata = merged;
+        }
+      }
       return { contact: existing.contact, identity: existing };
     }
 
@@ -72,6 +80,7 @@ export class ContactsService {
           externalUserId: input.externalUserId,
           username: input.username,
           displayName: input.displayName,
+          metadata: input.metadata ?? {},
         }),
       );
       return { contact, identity };
