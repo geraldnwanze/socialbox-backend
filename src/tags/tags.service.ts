@@ -51,24 +51,31 @@ export class TagsService {
     workspaceId: string,
     conversationId: string,
     tagId: string,
-  ): Promise<void> {
+  ): Promise<{ added: boolean; tagName: string }> {
     const tag = await this.tags.findOne({ where: { id: tagId, workspaceId } });
     if (!tag) throw new ResourceNotFoundException('Tag');
 
     const existing = await this.conversationTags.findOne({
       where: { conversationId, tagId },
     });
-    if (existing) return;
+    if (existing) return { added: false, tagName: tag.name };
     await this.conversationTags.save(
       this.conversationTags.create({ conversationId, tagId }),
     );
+    return { added: true, tagName: tag.name };
   }
 
   async detachFromConversation(
     conversationId: string,
     tagId: string,
-  ): Promise<void> {
+  ): Promise<{ removed: boolean; tagName: string | null }> {
+    const existing = await this.conversationTags.findOne({
+      where: { conversationId, tagId },
+      relations: ['tag'],
+    });
+    if (!existing) return { removed: false, tagName: null };
     await this.conversationTags.delete({ conversationId, tagId });
+    return { removed: true, tagName: existing.tag?.name ?? null };
   }
 
   listForConversation(conversationId: string) {

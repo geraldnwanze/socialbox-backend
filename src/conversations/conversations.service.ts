@@ -13,6 +13,8 @@ import { QueueName, ReadReceiptJobName } from '../queue/queue.constants';
 import { ConversationParticipant } from './entities/conversation-participant.entity';
 import { ConversationAssignment } from './entities/conversation-assignment.entity';
 import { ConversationStatus } from './enums/conversation-status.enum';
+import { ConversationPriority } from './enums/conversation-priority.enum';
+import { ConversationEventsService } from './conversation-events.service';
 import { ContactIdentity } from '../contacts/entities/contact-identity.entity';
 import { WorkspaceMember } from '../workspaces/entities/workspace-member.entity';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -40,6 +42,7 @@ export class ConversationsService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly realtimeService: RealtimeService,
     private readonly notificationsService: NotificationsService,
+    private readonly events: ConversationEventsService,
   ) {}
 
   /**
@@ -62,30 +65,40 @@ export class ConversationsService {
     });
     if (existing) return { conversation: existing, created: false };
 
-    return this.dataSource.transaction(async (manager) => {
-      const conversation = await manager.save(
-        manager.create(Conversation, {
-          workspaceId: input.workspaceId,
-          channelConnectionId: input.channelConnectionId,
-          externalConversationId: input.externalConversationId,
-          contactId: input.contactId,
-          status: ConversationStatus.OPEN,
-          lastMessageAt: input.firstMessageAt,
-          unreadCount: 0,
-        }),
-      );
-      await manager
-        .createQueryBuilder()
-        .insert()
-        .into(ConversationParticipant)
-        .values({
-          conversationId: conversation.id,
-          contactIdentityId: input.contactIdentityId,
-        })
-        .orIgnore()
-        .execute();
-      return { conversation, created: true };
-    });
+    return this.dataSource
+      .transaction(async (manager) => {
+        const conversation = await manager.save(
+          manager.create(Conversation, {
+            workspaceId: input.workspaceId,
+            channelConnectionId: input.channelConnectionId,
+            externalConversationId: input.externalConversationId,
+            contactId: input.contactId,
+            status: ConversationStatus.OPEN,
+            lastMessageAt: input.firstMessageAt,
+            unreadCount: 0,
+          }),
+        );
+        await manager
+          .createQueryBuilder()
+          .insert()
+          .into(ConversationParticipant)
+          .values({
+            conversationId: conversation.id,
+            contactIdentityId: input.contactIdentityId,
+          })
+          .orIgnore()
+          .execute();
+        return { conversation, created: true };
+      })
+      .then(async (result) => {
+        await this.events.record(
+          input.workspaceId,
+          result.conversation.id,
+          'CREATED',
+          null,
+        );
+        return result;
+      });
   }
 
   async recordInboundMessage(
@@ -93,6 +106,10 @@ export class ConversationsService {
     preview: string,
     sentAt: Date,
   ): Promise<Conversation> {
+    const before = await this.conversations.findOne({
+      where: { id: conversationId },
+      select: { id: true, workspaceId: true, status: true },
+    });
     await this.conversations
       .createQueryBuilder()
       .update(Conversation)
@@ -118,6 +135,16 @@ export class ConversationsService {
       RealtimeEvent.CONVERSATION_UPDATED,
       conversation,
     );
+    if (before && before.status !== ConversationStatus.OPEN) {
+      // A customer writing back is what reopened it, not an agent.
+      await this.events.record(
+        conversation.workspaceId,
+        conversationId,
+        'STATUS_CHANGED',
+        null,
+        { from: before.status, to: ConversationStatus.OPEN, auto: true },
+      );
+    }
     return conversation;
   }
 
@@ -214,8 +241,25 @@ export class ConversationsService {
       workspaceId,
       conversationId,
     );
+    // The assignee must belong to this workspace: ids are not secret, and an agent must never be
+    // able to attach a conversation to someone in another tenant.
+    const assignee = assignedToMemberId
+      ? await this.dataSource.getRepository(WorkspaceMember).findOne({
+          where: { id: assignedToMemberId, workspaceId },
+          relations: ['user'],
+        })
+      : null;
+    if (assignedToMemberId && !assignee) {
+      throw new ResourceNotFoundException('Team member');
+    }
+    const previousAssignee = conversation.assignedTo;
+    // update(), not save(): save() skips undefined, so "unassign" would silently keep the old
+    // assignee, and the already-loaded `assignee` relation could override the new id.
+    await this.conversations.update(conversationId, {
+      assignedTo: assignedToMemberId ?? (null as unknown as undefined),
+    });
     conversation.assignedTo = assignedToMemberId ?? undefined;
-    await this.conversations.save(conversation);
+    conversation.assignee = assignee ?? undefined;
     await this.assignments.save(
       this.assignments.create({
         conversationId,
@@ -235,20 +279,30 @@ export class ConversationsService {
       conversation,
     );
 
-    if (assignedToMemberId) {
-      const member = await this.dataSource
-        .getRepository(WorkspaceMember)
-        .findOne({ where: { id: assignedToMemberId } });
-      if (member) {
-        await this.notificationsService.create(
-          workspaceId,
-          member.userId,
-          NotificationType.CONVERSATION_ASSIGNED,
-          {
-            conversationId,
-          },
-        );
-      }
+    if (previousAssignee !== (assignedToMemberId ?? undefined)) {
+      await this.events.record(
+        workspaceId,
+        conversationId,
+        assignee ? 'ASSIGNED' : 'UNASSIGNED',
+        assignedByMemberId,
+        assignee
+          ? {
+              toMemberId: assignee.id,
+              toName: assignee.user?.fullName ?? 'A teammate',
+            }
+          : { fromMemberId: previousAssignee ?? null },
+      );
+    }
+
+    if (assignee) {
+      await this.notificationsService.create(
+        workspaceId,
+        assignee.userId,
+        NotificationType.CONVERSATION_ASSIGNED,
+        {
+          conversationId,
+        },
+      );
     }
 
     return conversation;
@@ -257,12 +311,14 @@ export class ConversationsService {
   async resolve(
     workspaceId: string,
     conversationId: string,
+    actorMemberId: string | null = null,
   ): Promise<Conversation> {
     return this.setStatus(
       workspaceId,
       conversationId,
       ConversationStatus.RESOLVED,
       RealtimeEvent.CONVERSATION_RESOLVED,
+      actorMemberId,
     );
   }
 
@@ -271,24 +327,28 @@ export class ConversationsService {
   async markPending(
     workspaceId: string,
     conversationId: string,
+    actorMemberId: string | null = null,
   ): Promise<Conversation> {
     return this.setStatus(
       workspaceId,
       conversationId,
       ConversationStatus.PENDING,
       RealtimeEvent.CONVERSATION_UPDATED,
+      actorMemberId,
     );
   }
 
   async reopen(
     workspaceId: string,
     conversationId: string,
+    actorMemberId: string | null = null,
   ): Promise<Conversation> {
     return this.setStatus(
       workspaceId,
       conversationId,
       ConversationStatus.OPEN,
       RealtimeEvent.CONVERSATION_UPDATED,
+      actorMemberId,
     );
   }
 
@@ -297,18 +357,77 @@ export class ConversationsService {
     conversationId: string,
     status: ConversationStatus,
     event: RealtimeEvent,
+    actorMemberId: string | null,
   ): Promise<Conversation> {
     const conversation = await this.findOneForWorkspace(
       workspaceId,
       conversationId,
     );
+    const previous = conversation.status;
     conversation.status = status;
     conversation.resolvedAt =
       status === ConversationStatus.RESOLVED ? new Date() : null;
     await this.conversations.save(conversation);
+    if (previous !== status) {
+      await this.events.record(
+        workspaceId,
+        conversationId,
+        'STATUS_CHANGED',
+        actorMemberId,
+        { from: previous, to: status },
+      );
+    }
     this.realtimeService.toWorkspace(workspaceId, event, conversation);
     this.realtimeService.toConversation(conversationId, event, conversation);
     return conversation;
+  }
+
+  async setPriority(
+    workspaceId: string,
+    conversationId: string,
+    priority: ConversationPriority,
+    actorMemberId: string,
+  ): Promise<Conversation> {
+    const conversation = await this.findOneForWorkspace(
+      workspaceId,
+      conversationId,
+    );
+    if (conversation.priority === priority) return conversation;
+    const previous = conversation.priority;
+    conversation.priority = priority;
+    await this.conversations.save(conversation);
+    await this.events.record(
+      workspaceId,
+      conversationId,
+      'PRIORITY_CHANGED',
+      actorMemberId,
+      { from: previous, to: priority },
+    );
+    this.realtimeService.toWorkspace(
+      workspaceId,
+      RealtimeEvent.CONVERSATION_UPDATED,
+      conversation,
+    );
+    return conversation;
+  }
+
+  /** Internal note: visible to the team in the activity timeline, never sent to the customer. */
+  async addNote(
+    workspaceId: string,
+    conversationId: string,
+    text: string,
+    actorMemberId: string,
+  ): Promise<void> {
+    await this.findOneForWorkspace(workspaceId, conversationId);
+    await this.events.record(
+      workspaceId,
+      conversationId,
+      'NOTE',
+      actorMemberId,
+      {
+        text: text.trim(),
+      },
+    );
   }
 
   async markRead(

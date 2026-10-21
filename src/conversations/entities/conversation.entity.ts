@@ -13,6 +13,7 @@ import { ChannelConnection } from '../../channels/entities/channel-connection.en
 import { Contact } from '../../contacts/entities/contact.entity';
 import { WorkspaceMember } from '../../workspaces/entities/workspace-member.entity';
 import { ConversationStatus } from '../enums/conversation-status.enum';
+import { ConversationPriority } from '../enums/conversation-priority.enum';
 
 @Entity('conversations')
 @Index(['workspaceId', 'status'])
@@ -53,6 +54,13 @@ export class Conversation {
     default: ConversationStatus.OPEN,
   })
   status: ConversationStatus;
+
+  @Column({
+    type: 'enum',
+    enum: ConversationPriority,
+    default: ConversationPriority.NORMAL,
+  })
+  priority: ConversationPriority;
 
   @Column({ nullable: true })
   assignedTo?: string;

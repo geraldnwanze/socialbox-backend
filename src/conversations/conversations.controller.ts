@@ -14,6 +14,8 @@ import { TagsService } from '../tags/tags.service';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { AssignConversationDto } from './dto/assign-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
+import { AddNoteDto } from './dto/add-note.dto';
+import { ConversationEventsService } from './conversation-events.service';
 import { CreateMessageDto } from '../messages/dto/create-message.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { WorkspaceGuard } from '../common/guards/workspace.guard';
@@ -30,6 +32,7 @@ export class ConversationsController {
     private readonly conversationsService: ConversationsService,
     private readonly messagesService: MessagesService,
     private readonly tagsService: TagsService,
+    private readonly eventsService: ConversationEventsService,
   ) {}
 
   @Get()
@@ -61,6 +64,14 @@ export class ConversationsController {
     @Param('id') id: string,
     @Body() dto: UpdateConversationDto,
   ) {
+    if (dto.priority) {
+      await this.conversationsService.setPriority(
+        workspace.workspaceId,
+        id,
+        dto.priority,
+        workspace.workspaceMemberId,
+      );
+    }
     if (dto.read)
       return this.conversationsService.markRead(workspace.workspaceId, id);
     return this.conversationsService.findOneForWorkspace(
@@ -88,7 +99,11 @@ export class ConversationsController {
     @CurrentWorkspace() workspace: WorkspaceContext,
     @Param('id') id: string,
   ) {
-    return this.conversationsService.resolve(workspace.workspaceId, id);
+    return this.conversationsService.resolve(
+      workspace.workspaceId,
+      id,
+      workspace.workspaceMemberId,
+    );
   }
 
   @Post(':id/pending')
@@ -96,7 +111,11 @@ export class ConversationsController {
     @CurrentWorkspace() workspace: WorkspaceContext,
     @Param('id') id: string,
   ) {
-    return this.conversationsService.markPending(workspace.workspaceId, id);
+    return this.conversationsService.markPending(
+      workspace.workspaceId,
+      id,
+      workspace.workspaceMemberId,
+    );
   }
 
   @Post(':id/reopen')
@@ -104,7 +123,11 @@ export class ConversationsController {
     @CurrentWorkspace() workspace: WorkspaceContext,
     @Param('id') id: string,
   ) {
-    return this.conversationsService.reopen(workspace.workspaceId, id);
+    return this.conversationsService.reopen(
+      workspace.workspaceId,
+      id,
+      workspace.workspaceMemberId,
+    );
   }
 
   @Get(':id/messages')
@@ -167,11 +190,20 @@ export class ConversationsController {
       workspace.workspaceId,
       id,
     );
-    await this.tagsService.attachToConversation(
+    const { added, tagName } = await this.tagsService.attachToConversation(
       workspace.workspaceId,
       id,
       tagId,
     );
+    if (added) {
+      await this.eventsService.record(
+        workspace.workspaceId,
+        id,
+        'TAG_ADDED',
+        workspace.workspaceMemberId,
+        { tagId, tagName },
+      );
+    }
     return { status: 'ok' };
   }
 
@@ -185,7 +217,46 @@ export class ConversationsController {
       workspace.workspaceId,
       id,
     );
-    await this.tagsService.detachFromConversation(id, tagId);
+    const { removed, tagName } = await this.tagsService.detachFromConversation(
+      id,
+      tagId,
+    );
+    if (removed) {
+      await this.eventsService.record(
+        workspace.workspaceId,
+        id,
+        'TAG_REMOVED',
+        workspace.workspaceMemberId,
+        { tagId, tagName },
+      );
+    }
+    return { status: 'ok' };
+  }
+
+  @Get(':id/events')
+  async listEvents(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @Param('id') id: string,
+  ) {
+    await this.conversationsService.findOneForWorkspace(
+      workspace.workspaceId,
+      id,
+    );
+    return this.eventsService.list(workspace.workspaceId, id);
+  }
+
+  @Post(':id/notes')
+  async addNote(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @Param('id') id: string,
+    @Body() dto: AddNoteDto,
+  ) {
+    await this.conversationsService.addNote(
+      workspace.workspaceId,
+      id,
+      dto.text,
+      workspace.workspaceMemberId,
+    );
     return { status: 'ok' };
   }
 }

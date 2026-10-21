@@ -316,6 +316,12 @@ checked when the job runs, so turning it off also stops receipts that were alrea
   channel identity, and all their conversations. Admins can **merge** a duplicate into a contact (moves
   identities and conversations, fills blanks, then deletes the duplicate). Merging is always manual —
   contacts are never auto-matched across channels.
+- **Activity timeline, priority and internal notes**: every conversation keeps an append-only history —
+  started, assigned/unassigned, resolved/reopened/pending (including "customer replied, so it was
+  reopened"), priority changes and tag changes — each with who did it. Agents can also leave **internal
+  notes** there (they are never sent to the customer). Priority (Low / Normal / High / Urgent) is set in the
+  customer panel; High and Urgent show a badge in the list. Existing conversations got a starting history
+  from their assignment records when this shipped.
 - **Collision detection**: agents see who else has a conversation open ("Ann Lee is also viewing…", initials
   on the conversation list) and an amber warning while someone is typing a reply, so two people don't answer
   the same customer. Each open conversation pings `POST /conversations/:id/presence` every 15s (and while

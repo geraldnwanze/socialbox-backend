@@ -727,4 +727,211 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
         .expect(400);
     });
   });
+
+  describe('conversation activity, priority and notes', () => {
+    let conversationId: string;
+    let agentMemberId: string;
+    let outsiderMemberId: string;
+
+    const events = async (token = owner) =>
+      (
+        await api()
+          .get(`/conversations/${conversationId}/events`)
+          .set(as(token))
+          .expect(200)
+      ).body as {
+        type: string;
+        data: Record<string, unknown>;
+        actor: { name: string } | null;
+      }[];
+
+    beforeAll(async () => {
+      const conn = await db.getRepository(ChannelConnection).save({
+        workspaceId: ws,
+        type: ChannelType.TELEGRAM,
+        provider: 'TelegramAdapter',
+        status: ChannelConnectionStatus.CONNECTED,
+        externalAccountId: `bot-activity-${stamp}`,
+        metadata: {},
+      });
+      const contact = await db
+        .getRepository(Contact)
+        .save({ workspaceId: ws, displayName: 'Activity' });
+      const conversation = await db.getRepository(Conversation).save({
+        workspaceId: ws,
+        channelConnectionId: conn.id,
+        contactId: contact.id,
+        externalConversationId: `activity-${stamp}`,
+      });
+      conversationId = conversation.id;
+      const members = await api()
+        .get('/workspace/members')
+        .set(as(owner))
+        .expect(200);
+      agentMemberId = members.body.find(
+        (m: { role: string }) => m.role === 'AGENT',
+      ).id;
+      const others = await api()
+        .get('/workspace/members')
+        .set(as(outsider, otherWs))
+        .expect(200);
+      outsiderMemberId = others.body[0].id;
+    });
+
+    it('records who assigned the conversation, once per real change', async () => {
+      await api()
+        .post(`/conversations/${conversationId}/assign`)
+        .set(as(owner))
+        .send({ assigneeMemberId: agentMemberId })
+        .expect(201);
+      await api()
+        .post(`/conversations/${conversationId}/assign`)
+        .set(as(owner))
+        .send({ assigneeMemberId: agentMemberId })
+        .expect(201);
+      const list = await events();
+      const assigned = list.filter((e) => e.type === 'ASSIGNED');
+      expect(assigned).toHaveLength(1);
+      expect(assigned[0]).toMatchObject({
+        data: { toName: 'agent' },
+        actor: { name: 'owner' },
+      });
+
+      await api()
+        .post(`/conversations/${conversationId}/assign`)
+        .set(as(owner))
+        .send({})
+        .expect(201);
+      expect(
+        (await events()).filter((e) => e.type === 'UNASSIGNED'),
+      ).toHaveLength(1);
+    });
+
+    it('refuses to assign to someone from another workspace', async () => {
+      await api()
+        .post(`/conversations/${conversationId}/assign`)
+        .set(as(owner))
+        .send({ assigneeMemberId: outsiderMemberId })
+        .expect(404);
+      const conv = await db
+        .getRepository(Conversation)
+        .findOneByOrFail({ id: conversationId });
+      expect(conv.assignedTo ?? null).toBeNull();
+    });
+
+    it('records status changes with the agent, and nothing when the status did not change', async () => {
+      await api()
+        .post(`/conversations/${conversationId}/resolve`)
+        .set(as(agent))
+        .expect(201);
+      await api()
+        .post(`/conversations/${conversationId}/resolve`)
+        .set(as(agent))
+        .expect(201);
+      await api()
+        .post(`/conversations/${conversationId}/reopen`)
+        .set(as(owner))
+        .expect(201);
+      const changes = (await events()).filter(
+        (e) => e.type === 'STATUS_CHANGED',
+      );
+      expect(
+        changes.map((e) => [e.data.from, e.data.to, e.actor?.name]),
+      ).toEqual([
+        ['OPEN', 'RESOLVED', 'agent'],
+        ['RESOLVED', 'OPEN', 'owner'],
+      ]);
+    });
+
+    it('changes priority (validated) and logs it', async () => {
+      const res = await api()
+        .patch(`/conversations/${conversationId}`)
+        .set(as(agent))
+        .send({ priority: 'URGENT' })
+        .expect(200);
+      expect(res.body.priority).toBe('URGENT');
+      await api()
+        .patch(`/conversations/${conversationId}`)
+        .set(as(agent))
+        .send({ priority: 'URGENT' })
+        .expect(200);
+      await api()
+        .patch(`/conversations/${conversationId}`)
+        .set(as(agent))
+        .send({ priority: 'SOON' })
+        .expect(400);
+      const changes = (await events()).filter(
+        (e) => e.type === 'PRIORITY_CHANGED',
+      );
+      expect(changes).toHaveLength(1);
+      expect(changes[0].data).toMatchObject({ from: 'NORMAL', to: 'URGENT' });
+    });
+
+    it('logs tag changes by name, once', async () => {
+      const tag = await api()
+        .post('/tags')
+        .set(as(owner))
+        .send({ name: 'VIP', color: '#6366F1' })
+        .expect(201);
+      await api()
+        .post(`/conversations/${conversationId}/tags/${tag.body.id}`)
+        .set(as(agent))
+        .expect(201);
+      await api()
+        .post(`/conversations/${conversationId}/tags/${tag.body.id}`)
+        .set(as(agent))
+        .expect(201);
+      await api()
+        .post(`/conversations/${conversationId}/tags/${tag.body.id}/remove`)
+        .set(as(agent))
+        .expect(201);
+      await api()
+        .post(`/conversations/${conversationId}/tags/${tag.body.id}/remove`)
+        .set(as(agent))
+        .expect(201);
+      const tagEvents = (await events()).filter((e) =>
+        e.type.startsWith('TAG_'),
+      );
+      expect(tagEvents.map((e) => [e.type, e.data.tagName])).toEqual([
+        ['TAG_ADDED', 'VIP'],
+        ['TAG_REMOVED', 'VIP'],
+      ]);
+    });
+
+    it('keeps internal notes in the timeline, validated and private to the workspace', async () => {
+      await api()
+        .post(`/conversations/${conversationId}/notes`)
+        .set(as(agent))
+        .send({ text: '  Called them, will follow up Monday  ' })
+        .expect(201);
+      await api()
+        .post(`/conversations/${conversationId}/notes`)
+        .set(as(agent))
+        .send({ text: '' })
+        .expect(400);
+      await api()
+        .post(`/conversations/${conversationId}/notes`)
+        .set(as(outsider, otherWs))
+        .send({ text: 'x' })
+        .expect(404);
+      await api()
+        .get(`/conversations/${conversationId}/events`)
+        .set(as(outsider, otherWs))
+        .expect(404);
+
+      const list = await events(agent);
+      const note = list.filter((e) => e.type === 'NOTE');
+      expect(note).toMatchObject([
+        {
+          data: { text: 'Called them, will follow up Monday' },
+          actor: { name: 'agent' },
+        },
+      ]);
+      // Notes are not messages: nothing is queued for the customer.
+      const sent = await db
+        .getRepository(Message)
+        .count({ where: { conversationId } });
+      expect(sent).toBe(0);
+    });
+  });
 });
