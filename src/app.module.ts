@@ -22,6 +22,7 @@ import { AttachmentsModule } from './attachments/attachments.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { HealthModule } from './health/health.module';
 import { WidgetModule } from './widget/widget.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { CannedResponsesModule } from './canned-responses/canned-responses.module';
 
 @Module({
@@ -50,6 +51,7 @@ import { CannedResponsesModule } from './canned-responses/canned-responses.modul
     RealtimeModule,
     WidgetModule,
     CannedResponsesModule,
+    AnalyticsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

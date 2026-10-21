@@ -90,6 +90,7 @@ export class ConversationsService {
         lastMessagePreview: preview,
         unreadCount: () => '"unread_count" + 1',
         status: ConversationStatus.OPEN,
+        resolvedAt: () => 'NULL',
       })
       .where('id = :id', { id: conversationId })
       .execute();
@@ -291,6 +292,8 @@ export class ConversationsService {
       conversationId,
     );
     conversation.status = status;
+    conversation.resolvedAt =
+      status === ConversationStatus.RESOLVED ? new Date() : null;
     await this.conversations.save(conversation);
     this.realtimeService.toWorkspace(workspaceId, event, conversation);
     this.realtimeService.toConversation(conversationId, event, conversation);

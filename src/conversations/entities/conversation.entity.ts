@@ -61,6 +61,10 @@ export class Conversation {
   @JoinColumn({ name: 'assigned_to' })
   assignee?: WorkspaceMember;
 
+  /** When the conversation was last resolved; cleared when it reopens. Feeds resolution-time stats. */
+  @Column({ type: 'timestamptz', nullable: true })
+  resolvedAt?: Date | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   lastMessageAt?: Date;
 
