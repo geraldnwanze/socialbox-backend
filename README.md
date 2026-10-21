@@ -121,8 +121,17 @@ npm run migration:revert
 
 ## Running tests
 
-Tests need the Dockerized Postgres/Redis running (`docker compose -f docker-compose.dev.yml up -d`)
-— several integration/e2e tests exercise real Postgres features (`jsonb`, enums, `ON CONFLICT`).
+The e2e tests exercise real Postgres features (`jsonb`, enums, `ON CONFLICT`), so they need a
+database. The easiest way, and the one that works while the full stack is running (its database port
+isn't published to the host), is the self-contained Docker run: it starts a **disposable** Postgres +
+Redis, runs the suite inside the network, and never touches your dev data.
+
+```bash
+npm run test:e2e:docker    # builds, runs everything in Docker, then cleans up
+```
+
+To run against the dev infrastructure instead (`docker compose -f docker-compose.dev.yml up -d`,
+which publishes the ports), use `npm run test:e2e` directly.
 
 ```bash
 npm run test        # unit tests

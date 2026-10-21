@@ -1,0 +1,47 @@
+# Runs the e2e suite in Docker against a disposable Postgres + Redis (nothing is published to the
+# host and the data is discarded), so it never touches your dev database:
+#   docker compose -f docker-compose.e2e.yml run --rm --build e2e
+#   docker compose -f docker-compose.e2e.yml down -v
+# The keys below are dummy values for tests only.
+name: socialbox-e2e
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: socialbox
+      POSTGRES_PASSWORD: socialbox
+      POSTGRES_DB: socialbox_e2e
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U socialbox -d socialbox_e2e']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  e2e:
+    build:
+      context: .
+      target: build # has devDependencies and the test sources
+    command: ['npx', 'jest', '--config', './test/jest-e2e.json', '--runInBand', '--forceExit']
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgres://socialbox:socialbox@postgres:5432/socialbox_e2e
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: e2e-jwt-secret-not-for-production
+      JWT_REFRESH_SECRET: e2e-refresh-secret-not-for-production
+      CREDENTIALS_ENCRYPTION_KEY: MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
