@@ -26,6 +26,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { PresenceModule } from './presence/presence.module';
 import { AutomationModule } from './automation/automation.module';
 import { InboxViewsModule } from './inbox-views/inbox-views.module';
+import { AiModule } from './ai/ai.module';
 import { CannedResponsesModule } from './canned-responses/canned-responses.module';
 
 @Module({
@@ -58,6 +59,7 @@ import { CannedResponsesModule } from './canned-responses/canned-responses.modul
     PresenceModule,
     AutomationModule,
     InboxViewsModule,
+    AiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -68,7 +68,7 @@ export class WorkspacesService {
 
   async updateSettings(
     workspaceId: string,
-    settings: { sendReadReceipts?: boolean },
+    settings: { sendReadReceipts?: boolean; aiAssistEnabled?: boolean },
   ): Promise<Workspace> {
     const workspace = await this.workspaces.findOne({
       where: { id: workspaceId },
@@ -76,6 +76,9 @@ export class WorkspacesService {
     if (!workspace) throw new ResourceNotFoundException('Workspace');
     if (settings.sendReadReceipts !== undefined) {
       workspace.sendReadReceipts = settings.sendReadReceipts;
+    }
+    if (settings.aiAssistEnabled !== undefined) {
+      workspace.aiAssistEnabled = settings.aiAssistEnabled;
     }
     return this.workspaces.save(workspace);
   }

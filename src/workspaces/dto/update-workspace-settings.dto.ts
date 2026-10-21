@@ -9,4 +9,11 @@ export class UpdateWorkspaceSettingsDto {
   )
   @IsBoolean()
   sendReadReceipts?: boolean;
+
+  @IsOptional()
+  @Transform(
+    ({ obj, key }: { obj: Record<string, unknown>; key: string }) => obj[key],
+  )
+  @IsBoolean()
+  aiAssistEnabled?: boolean;
 }

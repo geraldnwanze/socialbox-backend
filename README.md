@@ -102,6 +102,7 @@ just can't be connected until their credentials exist).
 | `JWT_SECRET` / `JWT_REFRESH_SECRET` | Auth token signing (use different, long random values) |
 | `CREDENTIALS_ENCRYPTION_KEY` | 32-byte base64 key encrypting channel OAuth tokens at rest |
 | `R2_*` | Cloudflare R2 (S3-compatible) for media storage. `R2_PUBLIC_ENDPOINT` is only needed when the server reaches storage at an internal address that browsers can't (it's used to sign links for browsers) |
+| `ANTHROPIC_API_KEY` / `AI_MODEL` / `AI_DAILY_LIMIT` | AI assist (see below). No key = the feature is simply unavailable. Model defaults to `claude-sonnet-5-5`; the limit is requests per workspace per day (default 500) |
 | `EMAIL_IDLE_ENABLED` | Keep IMAP IDLE connections for instant email (default `true`) |
 | `WHATSAPP_*` | WhatsApp Cloud API app secret / verify token |
 | `TELEGRAM_*` | Telegram webhook secret (bot tokens are supplied per-connection at connect time, not env vars) |
@@ -316,6 +317,19 @@ checked when the job runs, so turning it off also stops receipts that were alrea
   channel identity, and all their conversations. Admins can **merge** a duplicate into a contact (moves
   identities and conversations, fills blanks, then deletes the duplicate). Merging is always manual —
   contacts are never auto-matched across channels.
+- **AI assist** (Anthropic): *Summarize* (summary, sentiment, intent, "needs a reply", suggested next step) in the
+  customer panel; *Suggest a reply* in the composer (a preview the agent accepts, retries or dismisses — anything
+  already typed steers it, and the team's saved replies are given as approved wording); and *Rewrite my draft*
+  (friendlier / more formal / shorter / fix grammar, with undo). Nothing is ever sent automatically.
+  - **Opt-in and privacy:** needs `ANTHROPIC_API_KEY` on the server *and* an admin switching it on in Settings →
+    Workspace, because using it sends the conversation being worked on (last 30 messages) to Anthropic.
+    Credential-like strings (bot tokens, API keys, JWTs, private keys) and card numbers are removed first.
+    The key is read from the environment only and is never returned by the API.
+  - **Safety:** customer messages are treated as untrusted data in every prompt (no instruction-following from
+    inside a conversation); drafts must not invent facts, and say the team will check when unsure. Summaries
+    are cached for 24h per conversation state, calls are rate limited, and each workspace has a daily cap.
+  - **Limits:** the model can decline some conversations (the agent is told and writes it themselves); it
+    never reads attachments; quality depends on the model, so the UI labels output as AI-generated.
 - **Saved views, filters and bulk actions** (inbox):
   - *Filter* menu: priority, tag and order (newest/oldest first), on top of the sidebar (All / Unread /
     Assigned to me / a channel), the Open/Pending/Resolved tabs and search. The list now has **Load more** and

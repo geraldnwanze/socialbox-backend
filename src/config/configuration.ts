@@ -17,6 +17,13 @@ export default () => ({
     trustCloudflareHeaders: process.env.TRUST_CLOUDFLARE_HEADERS === 'true',
   },
 
+  ai: {
+    // Empty key = AI assist unavailable (the buttons simply don't appear).
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    model: process.env.AI_MODEL ?? 'claude-sonnet-5-5',
+    dailyLimitPerWorkspace: parseInt(process.env.AI_DAILY_LIMIT ?? '500', 10),
+  },
+
   email: {
     // Dev/test only: lets a mailbox live on a private network (e.g. a local mail server) and
     // allows unencrypted transport. Off by default so admins can't aim the server at its LAN.

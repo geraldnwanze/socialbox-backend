@@ -1567,4 +1567,145 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
       ).toEqual(['Team: refunds & chargebacks']);
     });
   });
+
+  describe('AI assist (gating and safety; the model itself is covered by unit tests)', () => {
+    let conversationId: string;
+
+    beforeAll(async () => {
+      const conn = await db.getRepository(ChannelConnection).save({
+        workspaceId: ws,
+        type: ChannelType.TELEGRAM,
+        provider: 'TelegramAdapter',
+        status: ChannelConnectionStatus.CONNECTED,
+        externalAccountId: `bot-ai-${stamp}`,
+        metadata: {},
+      });
+      const contact = await db
+        .getRepository(Contact)
+        .save({ workspaceId: ws, displayName: 'AI' });
+      conversationId = (
+        await db.getRepository(Conversation).save({
+          workspaceId: ws,
+          channelConnectionId: conn.id,
+          contactId: contact.id,
+          externalConversationId: `ai-${stamp}`,
+        })
+      ).id;
+    });
+
+    it('is off by default, and only admins can switch it on (with a real boolean)', async () => {
+      const list = await api()
+        .get('/workspaces')
+        .set('authorization', `Bearer ${owner}`)
+        .expect(200);
+      expect(
+        list.body.find((w: { id: string }) => w.id === ws).aiAssistEnabled,
+      ).toBe(false);
+
+      await api()
+        .patch('/workspace/settings')
+        .set(as(agent))
+        .send({ aiAssistEnabled: true })
+        .expect(403);
+      await api()
+        .patch('/workspace/settings')
+        .set(as(owner))
+        .send({ aiAssistEnabled: 'true' })
+        .expect(400);
+      const on = await api()
+        .patch('/workspace/settings')
+        .set(as(owner))
+        .send({ aiAssistEnabled: true })
+        .expect(200);
+      expect(on.body.aiAssistEnabled).toBe(true);
+    });
+
+    it('reports availability so the UI can hide the buttons', async () => {
+      const status = await api().get('/ai/status').set(as(agent)).expect(200);
+      expect(status.body).toEqual({ configured: false, enabled: true }); // the e2e server has no API key
+      await api().get('/ai/status').set(as(outsider, otherWs)).expect(200);
+    });
+
+    it('fails clearly (not with a crash) when the server has no key', async () => {
+      const res = await api()
+        .post(`/ai/conversations/${conversationId}/summary`)
+        .set(as(agent))
+        .expect(400);
+      // no messages yet is checked before anything else
+      expect(res.body.code).toBe('AI_NOTHING_TO_SUMMARIZE');
+      await db.getRepository(Message).save({
+        workspaceId: ws,
+        conversationId,
+        channelConnectionId: (
+          await db
+            .getRepository(Conversation)
+            .findOneByOrFail({ id: conversationId })
+        ).channelConnectionId,
+        messageType: MessageType.TEXT,
+        metadata: {},
+        direction: MessageDirection.INBOUND,
+        senderType: SenderType.CONTACT,
+        status: MessageStatus.RECEIVED,
+        sentAt: new Date(),
+        content: 'Where is my order?',
+        externalMessageId: `ai-${stamp}-1`,
+      });
+      const noKey = await api()
+        .post(`/ai/conversations/${conversationId}/summary`)
+        .set(as(agent))
+        .expect(503);
+      expect(noKey.body.code).toBe('AI_NOT_CONFIGURED');
+      const draft = await api()
+        .post(`/ai/conversations/${conversationId}/suggest-reply`)
+        .set(as(agent))
+        .send({})
+        .expect(503);
+      expect(draft.body.code).toBe('AI_NOT_CONFIGURED');
+    });
+
+    it("never reaches another workspace's conversations, and validates input", async () => {
+      await api()
+        .post(`/ai/conversations/${conversationId}/summary`)
+        .set(as(outsider, otherWs))
+        .expect(404);
+      await api()
+        .post(`/ai/conversations/${conversationId}/suggest-reply`)
+        .set(as(outsider, otherWs))
+        .send({})
+        .expect(404);
+      await api()
+        .post('/ai/conversations/not-a-uuid/summary')
+        .set(as(agent))
+        .expect(400);
+      await api()
+        .post('/ai/rewrite')
+        .set(as(agent))
+        .send({ text: 'hi', tone: 'sarcastic' })
+        .expect(400);
+      await api()
+        .post('/ai/rewrite')
+        .set(as(agent))
+        .send({ text: '', tone: 'shorter' })
+        .expect(400);
+      await api()
+        .post(`/ai/conversations/${conversationId}/suggest-reply`)
+        .set(as(agent))
+        .send({ instruction: 'x'.repeat(301) })
+        .expect(400);
+    });
+
+    it('is refused for a workspace that has not opted in', async () => {
+      await api()
+        .patch('/workspace/settings')
+        .set(as(owner))
+        .send({ aiAssistEnabled: false })
+        .expect(200);
+      // (the key check comes first on this server; with a key the answer is AI_DISABLED, see unit tests)
+      const res = await api()
+        .post('/ai/rewrite')
+        .set(as(agent))
+        .send({ text: 'hello', tone: 'shorter' });
+      expect([403, 503]).toContain(res.status);
+    });
+  });
 });

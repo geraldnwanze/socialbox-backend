@@ -29,6 +29,10 @@ export class Workspace {
   @Column({ default: true })
   sendReadReceipts: boolean;
 
+  /** Lets agents use AI assist, which sends the conversation being worked on to Anthropic. Off until an admin opts in. */
+  @Column({ default: false })
+  aiAssistEnabled: boolean;
+
   @OneToMany(() => WorkspaceMember, (member) => member.workspace)
   members: WorkspaceMember[];
 
