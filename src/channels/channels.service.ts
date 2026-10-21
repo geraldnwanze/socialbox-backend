@@ -108,6 +108,7 @@ export class ChannelsService {
     const result = await adapter.connect({
       ...credentials,
       previousExternalAccountId: previous?.externalAccountId,
+      previousMetadata: previous?.metadata,
     });
 
     // Same external account already known to this workspace (e.g. reconnecting after a
@@ -163,6 +164,7 @@ export class ChannelsService {
     const result = await adapter.connect({
       ...credentials,
       previousExternalAccountId: existing.externalAccountId,
+      previousMetadata: existing.metadata,
     });
 
     existing.status = ChannelConnectionStatus.CONNECTED;
@@ -212,6 +214,31 @@ export class ChannelsService {
         status: ChannelConnectionStatus.CONNECTED,
       },
     });
+  }
+
+  /** Connections the background poller should read from (credentials included, decrypted). */
+  async listConnectedWithCredentials(
+    type: ChannelType,
+  ): Promise<ChannelConnection[]> {
+    const rows = await this.connections.find({
+      where: { type, status: ChannelConnectionStatus.CONNECTED },
+      select: { id: true },
+    });
+    return Promise.all(rows.map((row) => this.loadWithCredentials(row.id)));
+  }
+
+  /** Merges keys into the connection's metadata without touching anything else. */
+  async mergeMetadata(
+    id: string,
+    patch: Record<string, unknown>,
+  ): Promise<void> {
+    await this.connections
+      .createQueryBuilder()
+      .update(ChannelConnection)
+      .set({ metadata: () => `metadata || CAST(:patch AS jsonb)` })
+      .setParameter('patch', JSON.stringify(patch))
+      .where('id = :id', { id })
+      .execute();
   }
 
   async markError(id: string, message: string): Promise<void> {

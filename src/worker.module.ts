@@ -23,6 +23,9 @@ import { WebhookProcessor } from './queue/processors/webhook.processor';
 import { OutboundMessageProcessor } from './queue/processors/outbound-message.processor';
 import { MediaProcessor } from './queue/processors/media.processor';
 import { NotificationProcessor } from './queue/processors/notification.processor';
+import { WebhooksService } from './webhooks/webhooks.service';
+import { EmailSyncService } from './email/email-sync.service';
+import { EmailSyncProcessor } from './email/email-sync.processor';
 
 /**
  * The worker process: no HTTP server, just BullMQ consumers for the four queues (webhooks,
@@ -60,6 +63,9 @@ import { NotificationProcessor } from './queue/processors/notification.processor
     OutboundMessageProcessor,
     MediaProcessor,
     NotificationProcessor,
+    WebhooksService,
+    EmailSyncService,
+    EmailSyncProcessor,
   ],
 })
 export class WorkerModule {}

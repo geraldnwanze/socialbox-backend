@@ -5,6 +5,7 @@ import { Job } from 'bullmq';
 import { Repository } from 'typeorm';
 import { QueueName, SendOutboundMessageJob } from '../queue.constants';
 import { Message } from '../../messages/entities/message.entity';
+import { MessageDirection } from '../../messages/enums/message.enums';
 import { Conversation } from '../../conversations/entities/conversation.entity';
 import { MessagesService } from '../../messages/messages.service';
 import { ChannelsService } from '../../channels/channels.service';
@@ -75,12 +76,24 @@ export class OutboundMessageProcessor extends WorkerHost {
         };
       }
 
+      // Threading context for channels that reply *to* something (email: In-Reply-To + subject).
+      const lastInbound = await this.messages.findOne({
+        where: {
+          conversationId: conversation.id,
+          direction: MessageDirection.INBOUND,
+        },
+        order: { sentAt: 'DESC' },
+      });
+      const subject = lastInbound?.metadata?.subject;
+
       const result = await adapter.sendMessage(
         connection,
         {
           id: conversation.id,
           externalConversationId: conversation.externalConversationId,
           contactExternalId: '',
+          lastInboundExternalMessageId: lastInbound?.externalMessageId,
+          lastInboundSubject: typeof subject === 'string' ? subject : undefined,
         },
         outbound,
       );

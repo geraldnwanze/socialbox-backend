@@ -6,6 +6,7 @@ export enum ChannelType {
   X = 'X',
   TIKTOK = 'TIKTOK',
   LIVE_CHAT = 'LIVE_CHAT',
+  EMAIL = 'EMAIL',
 }
 
 export enum ChannelConnectionStatus {

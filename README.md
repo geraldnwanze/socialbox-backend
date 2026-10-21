@@ -1,7 +1,7 @@
 # SocialBox — Unified Social Inbox (Backend)
 
 All your social messages. One inbox. This is the NestJS API + worker for a unified social/messaging
-inbox SaaS: businesses connect channels (WhatsApp, Telegram, Facebook Messenger, Instagram, and a built-in website live chat widget — see
+inbox SaaS: businesses connect channels (WhatsApp, Telegram, Facebook Messenger, Instagram, email over IMAP/SMTP, and a built-in website live chat widget — see
 [docs/social-platform-capabilities.md](docs/social-platform-capabilities.md) for what's actually
 functional and why), receive customer messages in one place, and reply from a shared team inbox.
 
@@ -105,6 +105,8 @@ just can't be connected until their credentials exist).
 | `WHATSAPP_*` | WhatsApp Cloud API app secret / verify token |
 | `TELEGRAM_*` | Telegram webhook secret (bot tokens are supplied per-connection at connect time, not env vars) |
 | `META_*` | Shared Meta app secret/verify token for Messenger + Instagram |
+| `EMAIL_ALLOW_PRIVATE_HOSTS` | Dev/test only (default `false`): allow mailboxes on private networks and unencrypted IMAP/SMTP |
+| `EMAIL_POLL_INTERVAL_MS` | How often mailboxes are checked for new mail (default 30000) |
 | `SENTRY_DSN` | Error tracking (optional) |
 
 ## Database
@@ -226,6 +228,55 @@ Things to know:
   snippets don't need updating.
 - Public endpoints are rate limited per IP (20 sessions/min, 30 sends/min, 60 polls/min).
 
+## Email channel
+
+Email works over plain **IMAP (receive) + SMTP (send)**, so any mailbox works — Gmail/Google
+Workspace (with an app password), Outlook, or your own domain — with no vendor account or DNS changes.
+
+1. **Settings → Channels → Email → Connect**: address, username/password, and the IMAP/SMTP servers.
+   Both are tested on connect, so wrong details fail with a clear message instead of silently.
+2. New mail appears in the inbox within ~30 seconds (`EMAIL_POLL_INTERVAL_MS`); replies are sent via SMTP.
+
+How it works: a repeating job in the **worker** (queue `email-sync`) polls each connected mailbox's
+INBOX using a per-mailbox cursor (IMAP UIDVALIDITY + last UID) stored in the connection metadata. Each
+mail is handed to the same idempotent webhook → queue pipeline as every other channel, keyed on its
+`Message-ID`, so crashes or re-polls never create duplicates or lose mail.
+
+- **One conversation per sender address.** Replies are threaded for the customer's mail client
+  (`In-Reply-To`/`References` and `Re: <their subject>`). The subject of each received mail is shown
+  above its text.
+- **Only new mail** is imported — existing mailbox history is not. Reconnecting the same mailbox
+  resumes where it left off.
+- **Skipped on purpose:** auto-replies, bulk/list mail, delivery-failure bounces, and mail from the
+  mailbox itself (these clutter the inbox and can start mail loops). Quoted history ("On … wrote:", `>`
+  lines) is trimmed from the displayed text.
+- **Not supported yet:** attachments (in or out), HTML rendering (HTML-only mail is shown as text),
+  mail in folders other than INBOX, and a copy of sent replies in the mailbox's Sent folder (many SMTP
+  servers, e.g. Gmail, do that themselves).
+- **Security:** credentials are encrypted at rest and never returned by the API. Mail server hosts are
+  resolved and **refused if they point at private/internal addresses** (so an admin can't aim the
+  server at its own network), and unencrypted transport is rejected, unless
+  `EMAIL_ALLOW_PRIVATE_HOSTS=true` — a development setting. If the mailbox later rejects the login
+  (password changed), the channel is marked `ERROR` with the reason and polling stops until you update
+  the credentials via **Settings**.
+- **Try it locally** without a real mailbox: `docker compose -f docker-compose.yml -f docker-compose.mailtest.yml up -d --build`
+  starts a throwaway mail server (GreenMail). Connect `support@example.com` / user `support` / password
+  `secret`, IMAP `greenmail:3143`, SMTP `greenmail:3025`, security *None*. Don't use that overlay in production.
+
+## Saved replies, contacts and analytics
+
+- **Saved replies** (Settings → Saved replies): admins manage reusable answers (`/shortcut`, title,
+  text). Agents type `/` in the composer (or use the button) to search and insert one. `{{customer_name}}`
+  becomes the customer's first name ("there" when unknown) and `{{agent_name}}` the agent's first name.
+- **Contacts**: each contact has a detail page with editable name/email/phone and internal notes, every
+  channel identity, and all their conversations. Admins can **merge** a duplicate into a contact (moves
+  identities and conversations, fills blanks, then deletes the duplicate). Merging is always manual —
+  contacts are never auto-matched across channels.
+- **Analytics** (admins/owners): conversations started per day, first-response time (median/average/p90),
+  resolution time, and breakdowns by channel and agent for 7/30/90 days. Times are wall-clock (no
+  business hours), days are UTC, and only a human agent's first reply counts. Resolution time relies on
+  `conversations.resolved_at`; conversations resolved before it existed use their last-updated time.
+
 ## Known limitations
 
 - **X and TikTok are not functional** — see docs/social-platform-capabilities.md. Their adapters
@@ -236,7 +287,7 @@ Things to know:
 - **No OAuth redirect flow** for Meta channels yet — credentials are entered directly. Swapping
   in Facebook Login for Business is additive (a new `connect()` implementation per adapter), not
   a rearchitecture.
-- **No outbound email** — password reset generates a token and logs it (dev-only) rather than
+- **No transactional email** — password reset generates a token and logs it (dev-only) rather than
   emailing it, since no transactional email provider is configured. Wiring one in is a single
   new call inside `AuthService.requestPasswordReset`.
 - **Refresh tokens** are stateless JWTs with a Redis-backed single-use blocklist (rotated on every
@@ -249,4 +300,5 @@ Things to know:
 - Move WhatsApp/Messenger/Instagram through Meta App Review once ready to onboard real businesses.
 - Add a dedicated search index if/when Postgres `ILIKE` search stops being fast enough (the
   repository layer is already isolated behind service methods, so this doesn't touch controllers).
-- Implement saved replies, analytics, and the other features explicitly deferred in this MVP's scope.
+- Email: attachments, HTML rendering, IMAP IDLE (instant delivery) and per-thread conversations.
+- Business-hours-aware response-time stats and per-agent personal saved replies.

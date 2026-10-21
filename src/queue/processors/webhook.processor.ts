@@ -85,6 +85,7 @@ export class WebhookProcessor extends WorkerHost {
             senderExternalId: event.contact.externalUserId,
             messageType: event.messageType,
             content: event.content,
+            metadata: event.messageMetadata,
             attachments: event.attachments,
             sentAt: event.sentAt,
           });

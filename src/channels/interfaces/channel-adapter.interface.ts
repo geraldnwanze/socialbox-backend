@@ -22,6 +22,8 @@ export interface UnifiedConversation {
   /** External id of the most recent inbound message, needed by providers whose "mark read"
    *  call operates on a specific message rather than the conversation as a whole. */
   lastInboundExternalMessageId?: string;
+  /** Subject of that inbound message (email only) so the reply can be threaded under it. */
+  lastInboundSubject?: string;
 }
 
 export interface OutboundAttachment {
@@ -66,6 +68,8 @@ export interface NormalizedInboundMessage {
   };
   messageType: MessageType;
   content?: string;
+  /** Provider facts about this one message (e.g. an email's subject), stored on the message. */
+  messageMetadata?: Record<string, unknown>;
   attachments: OutboundAttachment[];
   sentAt: Date;
   raw: unknown;

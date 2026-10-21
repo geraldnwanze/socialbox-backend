@@ -3,6 +3,7 @@ export enum QueueName {
   OUTBOUND_MESSAGES = 'outbound-messages',
   MEDIA = 'media',
   NOTIFICATIONS = 'notifications',
+  EMAIL_SYNC = 'email-sync',
 }
 
 export enum WebhookJobName {

@@ -44,6 +44,7 @@ export interface CreateInboundMessageInput {
   senderExternalId: string;
   messageType: MessageType;
   content?: string;
+  metadata?: Record<string, unknown>;
   attachments: OutboundAttachment[];
   sentAt: Date;
 }
@@ -101,6 +102,7 @@ export class MessagesService {
         content: input.content,
         status: MessageStatus.RECEIVED,
         sentAt: input.sentAt,
+        metadata: input.metadata ?? {},
       })
       .orIgnore()
       .returning('id')

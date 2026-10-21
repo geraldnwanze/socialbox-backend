@@ -1,0 +1,23 @@
+# Local mail server for trying the email channel without a real mailbox:
+#   docker compose -f docker-compose.yml -f docker-compose.mailtest.yml up -d --build
+# Connect with: email support@example.com, username "support", password "secret",
+# IMAP greenmail:3143 and SMTP greenmail:3025, security NONE (plain text, local only).
+# Also relaxes the private-host and TLS checks — never use this file in production.
+services:
+  greenmail:
+    image: greenmail/standalone:2.1.2
+    restart: unless-stopped
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.all
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=support:secret@example.com,ann:secret@customer.test
+
+  api:
+    environment:
+      EMAIL_ALLOW_PRIVATE_HOSTS: 'true'
+
+  worker:
+    environment:
+      EMAIL_ALLOW_PRIVATE_HOSTS: 'true'
+      EMAIL_POLL_INTERVAL_MS: '5000'

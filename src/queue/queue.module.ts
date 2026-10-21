@@ -30,6 +30,7 @@ import { QueueName } from './queue.constants';
       { name: QueueName.OUTBOUND_MESSAGES },
       { name: QueueName.MEDIA },
       { name: QueueName.NOTIFICATIONS },
+      { name: QueueName.EMAIL_SYNC },
     ),
   ],
   exports: [BullModule],
