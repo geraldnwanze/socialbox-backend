@@ -21,7 +21,9 @@ export default () => ({
     // Dev/test only: lets a mailbox live on a private network (e.g. a local mail server) and
     // allows unencrypted transport. Off by default so admins can't aim the server at its LAN.
     allowPrivateHosts: process.env.EMAIL_ALLOW_PRIVATE_HOSTS === 'true',
-    pollIntervalMs: parseInt(process.env.EMAIL_POLL_INTERVAL_MS ?? '30000', 10),
+    // Polling is the safety net behind IMAP IDLE, so it can be slow.
+    pollIntervalMs: parseInt(process.env.EMAIL_POLL_INTERVAL_MS ?? '60000', 10),
+    idleEnabled: process.env.EMAIL_IDLE_ENABLED !== 'false',
   },
 
   database: {

@@ -24,7 +24,7 @@ export class EmailSyncProcessor extends WorkerHost implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     const every = Math.max(
       5_000,
-      this.config.get<number>('email.pollIntervalMs') ?? 30_000,
+      this.config.get<number>('email.pollIntervalMs') ?? 60_000,
     );
     await this.queue.upsertJobScheduler(
       SCHEDULER_ID,

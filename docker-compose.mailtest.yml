@@ -20,4 +20,5 @@ services:
   worker:
     environment:
       EMAIL_ALLOW_PRIVATE_HOSTS: 'true'
-      EMAIL_POLL_INTERVAL_MS: '5000'
+      # Slow on purpose, so mail showing up within seconds proves IMAP IDLE (not polling) works.
+      EMAIL_POLL_INTERVAL_MS: '3600000'

@@ -216,6 +216,16 @@ export class ChannelsService {
     });
   }
 
+  /** Ids and last-change stamps of connected mailboxes, without touching credentials. */
+  async listConnectedStamps(
+    type: ChannelType,
+  ): Promise<{ id: string; updatedAt: Date }[]> {
+    return this.connections.find({
+      where: { type, status: ChannelConnectionStatus.CONNECTED },
+      select: { id: true, updatedAt: true },
+    });
+  }
+
   /** Connections the background poller should read from (credentials included, decrypted). */
   async listConnectedWithCredentials(
     type: ChannelType,
@@ -239,6 +249,17 @@ export class ChannelsService {
       .setParameter('patch', JSON.stringify(patch))
       .where('id = :id', { id })
       .execute();
+  }
+
+  /** Moves the email cursor forward only, so two workers racing never rewind it. */
+  async advanceImapCursor(id: string, uid: number): Promise<void> {
+    await this.connections.query(
+      `UPDATE "channel_connections"
+       SET "metadata" = jsonb_set("metadata", '{imapLastUid}',
+         to_jsonb(GREATEST(COALESCE(("metadata"->>'imapLastUid')::bigint, 0), $2::bigint)))
+       WHERE "id" = $1`,
+      [id, uid],
+    );
   }
 
   async markError(id: string, message: string): Promise<void> {

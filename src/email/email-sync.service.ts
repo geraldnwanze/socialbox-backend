@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Attachment, simpleParser } from 'mailparser';
 import { ChannelConnection } from '../channels/entities/channel-connection.entity';
-import { ChannelType } from '../channels/enums/channel-type.enum';
+import {
+  ChannelConnectionStatus,
+  ChannelType,
+} from '../channels/enums/channel-type.enum';
 import { ChannelsService } from '../channels/channels.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { EmailCredentials } from '../channels/adapters/email/email-config';
@@ -46,16 +49,40 @@ export class EmailSyncService {
     private readonly storage: StorageService,
   ) {}
 
-  async syncAll(): Promise<void> {
-    const connections = await this.channelsService.listConnectedWithCredentials(
-      ChannelType.EMAIL,
-    );
-    for (const connection of connections) {
+  /** Per-mailbox queue so a poll and an IDLE-triggered sync never overlap in this process. */
+  private readonly running = new Map<string, Promise<unknown>>();
+
+  private exclusive<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.running.get(id) ?? Promise.resolve();
+    const next = previous.then(fn, fn);
+    const tail = next.catch(() => undefined);
+    this.running.set(id, tail);
+    void tail.then(() => {
+      if (this.running.get(id) === tail) this.running.delete(id);
+    });
+    return next;
+  }
+
+  /** Re-reads the connection (fresh cursor and credentials) and syncs it; used by the IDLE watchers. */
+  async syncById(connectionId: string): Promise<void> {
+    await this.exclusive(connectionId, async () => {
+      const connection =
+        await this.channelsService.loadWithCredentials(connectionId);
+      if (connection.status !== ChannelConnectionStatus.CONNECTED) return;
       try {
-        await this.syncConnection(connection);
+        await this.syncConnectionUnlocked(connection);
       } catch (error) {
         await this.handleFailure(connection, error);
       }
+    });
+  }
+
+  async syncAll(): Promise<void> {
+    const connections = await this.channelsService.listConnectedStamps(
+      ChannelType.EMAIL,
+    );
+    for (const { id } of connections) {
+      await this.syncById(id);
     }
   }
 
@@ -78,7 +105,9 @@ export class EmailSyncService {
     }
   }
 
-  async syncConnection(connection: ChannelConnection): Promise<number> {
+  private async syncConnectionUnlocked(
+    connection: ChannelConnection,
+  ): Promise<number> {
     const creds = connection.credentials as unknown as EmailCredentials;
     if (!creds?.password) return 0;
     const allowPrivate =
@@ -140,9 +169,7 @@ export class EmailSyncService {
             ]);
             ingested++;
           }
-          await this.channelsService.mergeMetadata(connection.id, {
-            imapLastUid: uid,
-          });
+          await this.channelsService.advanceImapCursor(connection.id, uid);
         }
       } finally {
         lock.release();
