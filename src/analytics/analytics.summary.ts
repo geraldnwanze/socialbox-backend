@@ -114,3 +114,57 @@ export function fillDaily(
   }
   return out;
 }
+
+export interface TagLink {
+  conversationId: string;
+  tagId: string;
+  tagName: string;
+  tagColor: string;
+}
+
+/**
+ * Per-tag view of the same conversations the overview counts: how many carry each tag, how many got
+ * an agent reply, and how quickly. A conversation with several tags counts under each of them, so
+ * the rows add up to more than the total; `untagged` shows what has no tag at all.
+ */
+export function summarizeByTag(rows: FirstResponseRow[], links: TagLink[]) {
+  const byConversation = new Map(rows.map((r) => [r.conversationId, r]));
+  const groups = new Map<string, { link: TagLink; rows: FirstResponseRow[] }>();
+  const tagged = new Set<string>();
+
+  for (const link of links) {
+    const row = byConversation.get(link.conversationId);
+    if (!row) continue;
+    tagged.add(link.conversationId);
+    const group = groups.get(link.tagId) ?? { link, rows: [] };
+    group.rows.push(row);
+    groups.set(link.tagId, group);
+  }
+
+  const tags = [...groups.values()]
+    .map(({ link, rows: list }) => {
+      const answered = list.filter((r) => r.firstReplyAt);
+      return {
+        tagId: link.tagId,
+        name: link.tagName,
+        color: link.tagColor,
+        conversations: list.length,
+        answered: answered.length,
+        unanswered: list.length - answered.length,
+        medianFirstResponseSeconds: distribution(
+          answered.map((r) =>
+            secondsBetween(r.firstInboundAt, r.firstReplyAt as Date),
+          ),
+        ).medianSeconds,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.conversations - a.conversations || a.name.localeCompare(b.name),
+    );
+
+  return {
+    tags,
+    untagged: rows.filter((r) => !tagged.has(r.conversationId)).length,
+  };
+}

@@ -374,8 +374,8 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
         return conversation;
       };
 
-      await mk('a', 60);
-      await mk('b', 180);
+      const convA = await mk('a', 60);
+      const convB = await mk('b', 180);
       const unanswered = await mk('c');
       // A failed reply must not count as a response.
       await db.getRepository(Message).save({
@@ -416,6 +416,53 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
       expect(res.body.resolution.count).toBe(1);
       expect(res.body.byAgent[0]).toMatchObject({ memberId, firstReplies: 3 });
       expect(res.body.daily).toHaveLength(7);
+
+      // --- by tag: two of the four conversations carry the tag
+      const tag = await api()
+        .post('/tags')
+        .set(as(owner))
+        .send({ name: 'Reports tag', color: '#3B82F6' })
+        .expect(201);
+      for (const c of [convA, convB]) {
+        await api()
+          .post(`/conversations/${c.id}/tags/${tag.body.id}`)
+          .set(as(owner))
+          .expect(201);
+      }
+      const tagged = (
+        await api().get('/analytics/overview?days=7').set(as(owner)).expect(200)
+      ).body;
+      expect(tagged.byTag).toEqual([
+        expect.objectContaining({
+          name: 'Reports tag',
+          conversations: 2,
+          answered: 2,
+          unanswered: 0,
+          medianFirstResponseSeconds: 120,
+        }),
+      ]);
+      expect(tagged.untagged).toBe(2);
+
+      // --- workload: what is waiting right now, and what each person did
+      const { workload } = tagged;
+      expect(workload.unassigned.open).toBeGreaterThanOrEqual(3);
+      expect(workload.unassigned.awaitingReply).toBeGreaterThanOrEqual(1); // 'c' was never answered (its reply failed)
+      expect(workload.backlog.awaitingReply).toBeGreaterThanOrEqual(1);
+      expect(
+        new Date(workload.backlog.oldestWaitingSince).getTime(),
+      ).toBeLessThanOrEqual(base + 1000);
+      const me = workload.members.find(
+        (m: { memberId: string }) => m.memberId === memberId,
+      );
+      expect(me).toMatchObject({
+        name: 'owner',
+        messagesSent: 3,
+        medianFirstResponseSeconds: 60,
+      }); // the failed send is not counted
+      expect(me.resolved).toBeGreaterThanOrEqual(1);
+      expect(workload.members.map((m: { name: string }) => m.name)).toEqual(
+        expect.arrayContaining(['owner', 'agent']),
+      );
     });
 
     it("does not leak another workspace's numbers", async () => {

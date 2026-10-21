@@ -3,6 +3,7 @@ import {
   distribution,
   fillDaily,
   percentile,
+  summarizeByTag,
   summarizeFirstResponses,
 } from './analytics.summary';
 
@@ -93,5 +94,51 @@ describe('fillDaily', () => {
       { date: '2026-10-20', conversations: 3 },
       { date: '2026-10-21', conversations: 0 },
     ]);
+  });
+});
+
+describe('summarizeByTag', () => {
+  const link = (conversationId: string, tagId: string, tagName = tagId) => ({
+    conversationId,
+    tagId,
+    tagName,
+    tagColor: '#000',
+  });
+
+  it('counts each tagged conversation under every tag it has, with response times', () => {
+    const rows = [
+      row({ conversationId: '1' }), // answered after 60s
+      row({ conversationId: '2', firstReplyAt: at('2026-10-20T10:03:00Z') }), // 180s
+      row({ conversationId: '3', firstReplyAt: null, replyMemberId: null }),
+      row({ conversationId: '4' }),
+    ];
+    const { tags, untagged } = summarizeByTag(rows, [
+      link('1', 'refund', 'Refund'),
+      link('2', 'refund', 'Refund'),
+      link('3', 'refund', 'Refund'),
+      link('2', 'vip', 'VIP'),
+    ]);
+    expect(
+      tags.map((t) => [
+        t.name,
+        t.conversations,
+        t.answered,
+        t.unanswered,
+        t.medianFirstResponseSeconds,
+      ]),
+    ).toEqual([
+      ['Refund', 3, 2, 1, 120],
+      ['VIP', 1, 1, 0, 180],
+    ]);
+    expect(untagged).toBe(1); // conversation 4
+  });
+
+  it('ignores tag links for conversations outside the period', () => {
+    const { tags, untagged } = summarizeByTag(
+      [row({ conversationId: '1' })],
+      [link('elsewhere', 'x')],
+    );
+    expect(tags).toEqual([]);
+    expect(untagged).toBe(1);
   });
 });

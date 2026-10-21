@@ -359,7 +359,11 @@ checked when the job runs, so turning it off also stops receipts that were alrea
   heads-up, not a lock: nothing stops a second reply. It also drives the live chat visitor's "Typing…".
 - **Analytics** (admins/owners): conversations started per day, first-response time (median/average/p90),
   resolution time, and breakdowns by channel and agent for 7/30/90 days. Times are wall-clock (no
-  business hours), days are UTC, and only a human agent's first reply counts. Resolution time relies on
+  business hours), days are UTC, and only a human agent's first reply counts. It also shows **team workload**
+  (per teammate and for unassigned: open, pending, awaiting a reply and for how long, high/urgent, plus
+  resolved / replies / median first response in the period — "resolved" counts what a person resolved
+  themselves, not automation) and **conversations by tag** (a conversation with several tags counts under
+  each; untagged ones are counted separately). Resolution time relies on
   `conversations.resolved_at`; conversations resolved before it existed use their last-updated time.
 
 ## Known limitations
