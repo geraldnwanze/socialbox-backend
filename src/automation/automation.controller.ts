@@ -13,6 +13,7 @@ import {
 import { AutomationService } from './automation.service';
 import {
   CreateAutomationRuleDto,
+  ReorderAutomationRulesDto,
   UpdateAutomationRuleDto,
 } from './dto/automation-rule.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -43,6 +44,16 @@ export class AutomationController {
     @Body() dto: CreateAutomationRuleDto,
   ) {
     return this.automation.create(workspace.workspaceId, dto);
+  }
+
+  /** Declared before :id routes so "reorder" is never read as a rule id. */
+  @Post('reorder')
+  @HttpCode(200)
+  reorder(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @Body() dto: ReorderAutomationRulesDto,
+  ) {
+    return this.automation.reorder(workspace.workspaceId, dto.ids);
   }
 
   @Patch(':id')

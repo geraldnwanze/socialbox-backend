@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -54,4 +55,11 @@ export class UpdateAutomationRuleDto {
   @Transform(raw)
   @IsArray()
   actions?: unknown[];
+}
+
+export class ReorderAutomationRulesDto {
+  /** Every rule id in the workspace, in the order they should run. */
+  @IsArray()
+  @IsUUID('all', { each: true })
+  ids: string[];
 }

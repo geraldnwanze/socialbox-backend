@@ -136,6 +136,34 @@ export class AutomationService {
     return this.rules.save(rule);
   }
 
+  /**
+   * Rules run in this order, so it matters (e.g. "mark spam resolved" before "send a welcome reply").
+   * The request must list every rule exactly once — a partial list could silently interleave with
+   * rules the sender never saw.
+   */
+  async reorder(workspaceId: string, ids: string[]): Promise<AutomationRule[]> {
+    const current = await this.rules.find({
+      where: { workspaceId },
+      select: { id: true },
+    });
+    const known = new Set(current.map((r) => r.id));
+    if (
+      ids.length !== known.size ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => !known.has(id))
+    ) {
+      throw new BadRequestException(
+        'Send every rule exactly once to reorder them',
+      );
+    }
+    await this.rules.manager.transaction(async (manager) => {
+      for (const [position, id] of ids.entries()) {
+        await manager.update(AutomationRule, { id, workspaceId }, { position });
+      }
+    });
+    return this.list(workspaceId);
+  }
+
   async remove(workspaceId: string, id: string): Promise<void> {
     const rule = await this.rules.findOne({ where: { id, workspaceId } });
     if (!rule) throw new ResourceNotFoundException('Automation rule');

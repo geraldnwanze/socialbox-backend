@@ -1126,6 +1126,94 @@ describe('Features (e2e): saved replies, contacts, analytics, email', () => {
       expect(res.body.message).toContain('this workspace');
     });
 
+    it('reorders rules (every rule exactly once) and runs them in that order', async () => {
+      const mk = async (name: string) =>
+        (
+          await api()
+            .post('/automation-rules')
+            .set(as(owner))
+            .send(rule({ name }))
+            .expect(201)
+        ).body.id as string;
+      const [one, two, three] = [
+        await mk('First'),
+        await mk('Second'),
+        await mk('Third'),
+      ];
+      const all = async () =>
+        (await api().get('/automation-rules').set(as(owner)).expect(200))
+          .body as { id: string; name: string }[];
+
+      const before = (await all()).map((r) => r.id);
+      const mine = [one, two, three];
+      const others = before.filter((id) => !mine.includes(id));
+
+      const res = await api()
+        .post('/automation-rules/reorder')
+        .set(as(owner))
+        .send({ ids: [...others, three, one, two] })
+        .expect(200);
+      expect(res.body.map((r: { id: string }) => r.id)).toEqual([
+        ...others,
+        three,
+        one,
+        two,
+      ]);
+      expect((await all()).map((r) => r.id)).toEqual([
+        ...others,
+        three,
+        one,
+        two,
+      ]);
+
+      // partial, duplicated, unknown or malformed lists are refused and change nothing
+      await api()
+        .post('/automation-rules/reorder')
+        .set(as(owner))
+        .send({ ids: [one, two] })
+        .expect(400);
+      await api()
+        .post('/automation-rules/reorder')
+        .set(as(owner))
+        .send({ ids: [...others, one, one, two] })
+        .expect(400);
+      await api()
+        .post('/automation-rules/reorder')
+        .set(as(owner))
+        .send({
+          ids: [...others, three, one, '00000000-0000-4000-8000-000000000000'],
+        })
+        .expect(400);
+      await api()
+        .post('/automation-rules/reorder')
+        .set(as(owner))
+        .send({ ids: 'nope' })
+        .expect(400);
+      await api()
+        .post('/automation-rules/reorder')
+        .set(as(agent))
+        .send({ ids: before })
+        .expect(403);
+      expect((await all()).map((r) => r.id)).toEqual([
+        ...others,
+        three,
+        one,
+        two,
+      ]);
+
+      // another workspace can't reorder these, and its own (empty) list is fine
+      await api()
+        .post('/automation-rules/reorder')
+        .set(as(outsider, otherWs))
+        .send({ ids: [one] })
+        .expect(400);
+      await api()
+        .post('/automation-rules/reorder')
+        .set(as(outsider, otherWs))
+        .send({ ids: [] })
+        .expect(200);
+    });
+
     it('keeps rules private to their workspace', async () => {
       const created = await api()
         .post('/automation-rules')

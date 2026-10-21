@@ -343,8 +343,8 @@ checked when the job runs, so turning it off also stops receipts that were alrea
     count as an agent's first response in analytics. `{{customer_name}}` works as in saved replies.
   - Everything a rule does appears in the conversation's activity as *Automation "name"*, and each rule
     shows how often it has run.
-  - Not yet: re-ordering rules, "any of" conditions, delays, or rules on other triggers (e.g. no reply
-    after N hours).
+  - Order matters, so rules can be moved up and down in the list (the server only accepts a full ordering).
+  - Not yet: "any of" conditions, delays, or rules on other triggers (e.g. no reply after N hours).
 - **Activity timeline, priority and internal notes**: every conversation keeps an append-only history —
   started, assigned/unassigned, resolved/reopened/pending (including "customer replied, so it was
   reopened"), priority changes and tag changes — each with who did it. Agents can also leave **internal
