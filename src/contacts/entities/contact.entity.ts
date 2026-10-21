@@ -37,6 +37,10 @@ export class Contact {
   @Column({ nullable: true })
   phone?: string;
 
+  /** Free-form internal notes about the person; never sent to the customer. */
+  @Column({ type: 'text', nullable: true })
+  notes?: string;
+
   @Column({ type: 'jsonb', default: {} })
   metadata: Record<string, unknown>;
 
