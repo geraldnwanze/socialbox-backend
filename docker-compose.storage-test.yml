@@ -1,0 +1,28 @@
+# Local S3-compatible object storage (Adobe S3Mock) so attachments work without a Cloudflare R2
+# account:
+#   docker compose -f docker-compose.yml -f docker-compose.storage-test.yml up -d --build
+# Combine with docker-compose.mailtest.yml to try email attachments too. Dev/test only: S3Mock
+# does not check credentials, and port 9090 is published so your browser can open signed links.
+services:
+  s3:
+    image: adobe/s3mock:latest
+    restart: unless-stopped
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: socialbox-media
+    ports:
+      - '9090:9090'
+
+  api:
+    environment: &storage
+      R2_ENDPOINT: http://s3:9090
+      R2_PUBLIC_ENDPOINT: http://localhost:9090
+      R2_ACCESS_KEY_ID: test
+      R2_SECRET_ACCESS_KEY: test
+      R2_BUCKET: socialbox-media
+    depends_on:
+      - s3
+
+  worker:
+    environment: *storage
+    depends_on:
+      - s3

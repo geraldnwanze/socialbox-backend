@@ -71,6 +71,12 @@ export class OutboundMessageProcessor extends WorkerHost {
           url: await this.storageService.getSignedDownloadUrl(
             attachment.storageKey,
           ),
+          internalUrl: await this.storageService.getSignedDownloadUrl(
+            attachment.storageKey,
+            3600,
+            undefined,
+            true,
+          ),
           mimeType: attachment.mimeType ?? 'application/octet-stream',
           fileName: attachment.fileName,
         };

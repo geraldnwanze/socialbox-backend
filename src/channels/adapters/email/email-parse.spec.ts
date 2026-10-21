@@ -4,6 +4,7 @@ import {
   isAutomatedMail,
   nameFromAddress,
   replySubject,
+  sanitizeEmailHtml,
   stripQuotedReply,
 } from './email-parse';
 
@@ -84,5 +85,37 @@ describe('text helpers', () => {
   it('builds a name from an address', () => {
     expect(nameFromAddress('ann.lee@x.com')).toBe('Ann Lee');
     expect(nameFromAddress('sales_team@x.com')).toBe('Sales Team');
+  });
+});
+
+describe('sanitizeEmailHtml', () => {
+  it('keeps basic formatting and drops scripts, styles, event handlers and images', () => {
+    const out = sanitizeEmailHtml(
+      '<p onclick="x()">Hi <b>Ann</b></p><script>alert(1)</script><style>p{}</style><img src="https://t.example/pixel.gif"><iframe src="https://evil"></iframe>',
+    );
+    expect(out).toBe('<p>Hi <b>Ann</b></p>');
+  });
+
+  it('allows only safe link schemes and opens links safely', () => {
+    const out = sanitizeEmailHtml(
+      '<a href="https://ok.example">ok</a><a href="javascript:alert(1)">bad</a><a href="data:text/html,x">bad2</a>',
+    ) as string;
+    expect(out).toContain('href="https://ok.example"');
+    expect(out).toContain('rel="noopener noreferrer nofollow"');
+    expect(out).toContain('target="_blank"');
+    expect(out).not.toContain('javascript:');
+    expect(out).not.toContain('data:');
+  });
+
+  it('removes quoted history so it matches the plain-text view', () => {
+    const out = sanitizeEmailHtml(
+      '<div>Thanks!</div><div class="gmail_quote">On Tue, Ann wrote:<blockquote>old</blockquote></div>',
+    );
+    expect(out).toBe('<div>Thanks!</div>');
+  });
+
+  it('returns null when nothing remains or it is huge', () => {
+    expect(sanitizeEmailHtml('<script>x</script>')).toBeNull();
+    expect(sanitizeEmailHtml(`<p>${'a'.repeat(150_000)}</p>`)).toBeNull();
   });
 });

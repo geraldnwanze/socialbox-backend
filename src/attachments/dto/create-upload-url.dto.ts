@@ -6,6 +6,13 @@ const ALLOWED_MIME_PREFIXES = [
   'audio/',
   'application/pdf',
   'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.',
+  'application/vnd.oasis.opendocument.',
+  'application/zip',
+  'text/plain',
+  'text/csv',
 ];
 
 export class CreateUploadUrlDto {

@@ -32,8 +32,16 @@ export interface EmailInboundPayload {
   fromName?: string;
   subject: string;
   text: string;
+  /** Sanitized formatting of the same text (see sanitizeEmailHtml), when the mail had HTML. */
+  html?: string;
   inReplyTo?: string;
   sentAt: string;
+  attachments?: {
+    storageKey: string;
+    mimeType: string;
+    fileName?: string;
+    size?: number;
+  }[];
 }
 
 /** Cursor into the mailbox, kept in the connection's metadata. */
@@ -53,10 +61,11 @@ export class EmailAdapter implements ChannelAdapter {
   readonly type = ChannelType.EMAIL;
   readonly capabilities: ChannelCapabilities = {
     sendText: true,
-    sendImage: false,
-    sendVideo: false,
-    sendAudio: false,
-    sendDocument: false,
+    // Any file can ride along as an attachment, whatever its type.
+    sendImage: true,
+    sendVideo: true,
+    sendAudio: true,
+    sendDocument: true,
     markAsRead: false,
     deliveryReceipts: false,
     readReceipts: false,
@@ -148,10 +157,10 @@ export class EmailAdapter implements ChannelAdapter {
     conversation: UnifiedConversation,
     message: OutboundMessage,
   ): Promise<SendMessageResult> {
-    if (message.type !== MessageType.TEXT || !message.text) {
+    if (!message.text && !message.attachment) {
       throw new AppException(
         'UNSUPPORTED_MESSAGE_TYPE',
-        'Email supports text replies only for now',
+        'Nothing to send: add some text or an attachment',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -177,7 +186,16 @@ export class EmailAdapter implements ChannelAdapter {
           : creds.email,
         to,
         subject: replySubject(conversation.lastInboundSubject),
-        text: message.text,
+        text: message.text ?? '',
+        ...(message.attachment && {
+          attachments: [
+            {
+              filename: message.attachment.fileName ?? 'attachment',
+              path: message.attachment.internalUrl ?? message.attachment.url,
+              contentType: message.attachment.mimeType,
+            },
+          ],
+        }),
         ...(inReplyTo && { inReplyTo, references: [inReplyTo] }),
       });
       return {
@@ -231,9 +249,15 @@ export class EmailAdapter implements ChannelAdapter {
         content: p.text,
         messageMetadata: {
           subject: p.subject,
+          ...(p.html && { html: p.html }),
           ...(p.inReplyTo && { inReplyTo: p.inReplyTo }),
         },
-        attachments: [],
+        attachments: (p.attachments ?? []).map((a) => ({
+          storageKey: a.storageKey,
+          mimeType: a.mimeType,
+          fileName: a.fileName,
+          size: a.size,
+        })),
         sentAt: new Date(p.sentAt),
         raw: p,
       },

@@ -65,6 +65,8 @@ export class AttachmentsController {
     return {
       url: await this.storageService.getSignedDownloadUrl(
         attachment.storageKey,
+        900,
+        attachment.fileName ?? 'attachment',
       ),
     };
   }

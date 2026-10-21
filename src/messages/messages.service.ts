@@ -20,7 +20,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { RealtimeEvent } from '../realtime/realtime.events';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ResourceNotFoundException } from '../common/exceptions/app.exception';
-import { OutboundAttachment } from '../channels/interfaces/channel-adapter.interface';
+import { InboundAttachment } from '../channels/interfaces/channel-adapter.interface';
 import {
   PaginationQuery,
   paginateByCreatedAt,
@@ -45,7 +45,7 @@ export interface CreateInboundMessageInput {
   messageType: MessageType;
   content?: string;
   metadata?: Record<string, unknown>;
-  attachments: OutboundAttachment[];
+  attachments: InboundAttachment[];
   sentAt: Date;
 }
 
@@ -130,11 +130,16 @@ export class MessagesService {
           mimeType: attachment.mimeType,
           fileName: attachment.fileName,
           sourceUrl: attachment.url,
+          storageKey: attachment.storageKey,
+          fileSize: attachment.size,
         }),
       );
-      await this.mediaQueue.add(MediaJobName.MIRROR_TO_STORAGE, {
-        attachmentId: saved.id,
-      });
+      // Already-stored files (email) need no mirroring.
+      if (!attachment.storageKey) {
+        await this.mediaQueue.add(MediaJobName.MIRROR_TO_STORAGE, {
+          attachmentId: saved.id,
+        });
+      }
     }
 
     await this.conversationsService.recordInboundMessage(

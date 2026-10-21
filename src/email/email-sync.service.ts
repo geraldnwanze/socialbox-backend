@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { simpleParser } from 'mailparser';
+import { Attachment, simpleParser } from 'mailparser';
 import { ChannelConnection } from '../channels/entities/channel-connection.entity';
 import { ChannelType } from '../channels/enums/channel-type.enum';
 import { ChannelsService } from '../channels/channels.service';
@@ -14,15 +14,20 @@ import {
   EmailInboundPayload,
   EmailSyncState,
 } from '../channels/adapters/email/email.adapter';
+import { StorageService } from '../storage/storage.service';
 import {
   htmlToText,
   isAutomatedMail,
+  sanitizeEmailHtml,
   stripQuotedReply,
 } from '../channels/adapters/email/email-parse';
 
 /** Caps one poll so a huge backlog is worked through over several cycles, not one long stall. */
 const MAX_PER_POLL = 50;
 const MAX_BODY_CHARS = 20_000;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_ATTACHMENTS = 10;
+const MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 /**
  * Reads new mail from each connected mailbox and feeds it into the normal webhook pipeline.
@@ -38,6 +43,7 @@ export class EmailSyncService {
     private readonly channelsService: ChannelsService,
     private readonly webhooksService: WebhooksService,
     private readonly config: ConfigService,
+    private readonly storage: StorageService,
   ) {}
 
   async syncAll(): Promise<void> {
@@ -121,7 +127,13 @@ export class EmailSyncService {
         batch.sort((a, b) => a.uid - b.uid);
 
         for (const { uid, source } of batch) {
-          const payload = await this.toPayload(source, creds, uid, validity);
+          const payload = await this.toPayload(
+            source,
+            creds,
+            uid,
+            validity,
+            connection.workspaceId,
+          );
           if (payload) {
             await this.webhooksService.ingest('email', connection.id, payload, [
               `email:${connection.id}:${payload.messageId}`,
@@ -150,6 +162,7 @@ export class EmailSyncService {
     creds: EmailCredentials,
     uid: number,
     validity: string,
+    workspaceId: string,
   ): Promise<EmailInboundPayload | null> {
     const mail = await simpleParser(source);
     const from = mail.from?.value?.[0];
@@ -159,16 +172,81 @@ export class EmailSyncService {
 
     const rawBody =
       mail.text?.trim() || (mail.html ? htmlToText(mail.html) : '');
-    const body = stripQuotedReply(rawBody).slice(0, MAX_BODY_CHARS);
+    let body = stripQuotedReply(rawBody).slice(0, MAX_BODY_CHARS);
+    const html = mail.html ? sanitizeEmailHtml(mail.html) : null;
+
+    const { stored, notes } = await this.storeAttachments(
+      mail.attachments,
+      workspaceId,
+    );
+    if (notes.length) body = `${body}\n\n${notes.join('\n')}`.trim();
 
     return {
       messageId: mail.messageId ?? `uid-${validity}-${uid}`,
       fromAddress,
       fromName: from?.name || undefined,
       subject: (mail.subject ?? '').trim(),
-      text: body || '(no text content)',
+      text: body || (stored.length ? '' : '(no text content)'),
+      ...(html && { html }),
+      ...(stored.length && { attachments: stored }),
       inReplyTo: mail.inReplyTo || undefined,
       sentAt: (mail.date ?? new Date()).toISOString(),
     };
+  }
+
+  /**
+   * Saves a mail's real attachments (not inline signature images) to storage so they outlive the
+   * mailbox and can be downloaded from the inbox. A file that can't be stored never blocks the
+   * mail itself: it is mentioned in the message text instead.
+   */
+  private async storeAttachments(
+    attachments: Attachment[] | undefined,
+    workspaceId: string,
+  ): Promise<{
+    stored: NonNullable<EmailInboundPayload['attachments']>;
+    notes: string[];
+  }> {
+    const stored: NonNullable<EmailInboundPayload['attachments']> = [];
+    const notes: string[] = [];
+    let total = 0;
+
+    const real = (attachments ?? []).filter(
+      (a) => !(a.contentDisposition === 'inline' && a.related),
+    );
+    for (const attachment of real) {
+      const name = attachment.filename ?? 'attachment';
+      if (stored.length >= MAX_ATTACHMENTS) {
+        notes.push(`[Attachment skipped: ${name} (too many attachments)]`);
+        continue;
+      }
+      if (
+        attachment.size > MAX_ATTACHMENT_BYTES ||
+        total + attachment.size > MAX_TOTAL_ATTACHMENT_BYTES
+      ) {
+        notes.push(`[Attachment skipped: ${name} (too large)]`);
+        continue;
+      }
+      try {
+        const key = this.storage.buildKey(workspaceId, name);
+        await this.storage.upload(
+          key,
+          attachment.content,
+          attachment.contentType,
+        );
+        total += attachment.size;
+        stored.push({
+          storageKey: key,
+          mimeType: attachment.contentType,
+          fileName: attachment.filename,
+          size: attachment.size,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Could not store attachment "${name}": ${(error as Error).message}`,
+        );
+        notes.push(`[Attachment could not be saved: ${name}]`);
+      }
+    }
+    return { stored, notes };
   }
 }

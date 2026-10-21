@@ -1,3 +1,5 @@
+import sanitizeHtml from 'sanitize-html';
+
 /** Pure helpers for turning raw mail into inbox-friendly pieces. */
 
 /** "Re: Re: Hello" -> "Hello", so replies never stack up prefixes. */
@@ -93,4 +95,69 @@ export function nameFromAddress(address: string): string {
   const words = local.split(/[._-]+/).filter(Boolean);
   if (words.length === 0) return address;
   return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+}
+
+const MAX_HTML_CHARS = 100_000;
+
+/**
+ * Makes a mail's HTML safe to show to agents: only basic formatting tags survive, no scripts,
+ * styles, forms or images (remote images would tell the sender when and where mail was opened),
+ * links are http(s)/mailto only and always open in a new tab. Quoted history is removed so the
+ * formatted view shows the same new text as the plain one. Returns null when nothing is left or
+ * it is too large to be worth storing.
+ */
+export function sanitizeEmailHtml(html: string): string | null {
+  const clean = sanitizeHtml(html, {
+    allowedTags: [
+      'p',
+      'br',
+      'div',
+      'span',
+      'b',
+      'strong',
+      'i',
+      'em',
+      'u',
+      's',
+      'a',
+      'ul',
+      'ol',
+      'li',
+      'pre',
+      'code',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'hr',
+      'table',
+      'thead',
+      'tbody',
+      'tr',
+      'th',
+      'td',
+    ],
+    allowedAttributes: {
+      a: ['href', 'target', 'rel'],
+      td: ['colspan', 'rowspan'],
+      th: ['colspan', 'rowspan'],
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+    allowProtocolRelative: false,
+    transformTags: {
+      a: sanitizeHtml.simpleTransform('a', {
+        target: '_blank',
+        rel: 'noopener noreferrer nofollow',
+      }),
+    },
+    exclusiveFilter: (frame) =>
+      frame.tag === 'blockquote' ||
+      /gmail_quote|yahoo_quoted|moz-cite-prefix/.test(
+        frame.attribs?.class ?? '',
+      ),
+  }).trim();
+  if (!clean || clean.length > MAX_HTML_CHARS) return null;
+  return clean;
 }

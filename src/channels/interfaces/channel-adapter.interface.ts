@@ -27,9 +27,22 @@ export interface UnifiedConversation {
 }
 
 export interface OutboundAttachment {
+  /** Reachable by the provider / a browser. */
   url: string;
+  /** Reachable from this server's own network, for adapters that fetch the file themselves. */
+  internalUrl?: string;
   mimeType: string;
   fileName?: string;
+}
+
+/** An attachment on a received message: either a provider URL still to be mirrored into our storage,
+ *  or a file the adapter's poller already stored (`storageKey`). */
+export interface InboundAttachment {
+  url?: string;
+  storageKey?: string;
+  mimeType: string;
+  fileName?: string;
+  size?: number;
 }
 
 export interface OutboundMessage {
@@ -70,7 +83,7 @@ export interface NormalizedInboundMessage {
   content?: string;
   /** Provider facts about this one message (e.g. an email's subject), stored on the message. */
   messageMetadata?: Record<string, unknown>;
-  attachments: OutboundAttachment[];
+  attachments: InboundAttachment[];
   sentAt: Date;
   raw: unknown;
 }

@@ -16,19 +16,31 @@ import { randomUUID } from 'crypto';
 @Injectable()
 export class StorageService {
   private readonly client: S3Client;
+  /** Signs URLs for browsers; differs from `client` only when storage has a separate public address. */
+  private readonly signingClient: S3Client;
   private readonly bucket: string;
 
   constructor(private readonly configService: ConfigService) {
     this.bucket = this.configService.get<string>('r2.bucket')!;
-    this.client = new S3Client({
-      region: 'auto',
-      endpoint: this.configService.get<string>('r2.endpoint'),
-      credentials: {
-        accessKeyId: this.configService.get<string>('r2.accessKeyId') ?? '',
-        secretAccessKey:
-          this.configService.get<string>('r2.secretAccessKey') ?? '',
-      },
-    });
+    const endpoint = this.configService.get<string>('r2.endpoint');
+    const publicEndpoint = this.configService.get<string>('r2.publicEndpoint');
+    const make = (url?: string) =>
+      new S3Client({
+        region: 'auto',
+        endpoint: url,
+        // Self-hosted S3 (MinIO, ...) addresses buckets by path, not subdomain.
+        forcePathStyle: !!url && !url.includes('r2.cloudflarestorage.com'),
+        credentials: {
+          accessKeyId: this.configService.get<string>('r2.accessKeyId') ?? '',
+          secretAccessKey:
+            this.configService.get<string>('r2.secretAccessKey') ?? '',
+        },
+      });
+    this.client = make(endpoint);
+    this.signingClient =
+      publicEndpoint && publicEndpoint !== endpoint
+        ? make(publicEndpoint)
+        : this.client;
   }
 
   buildKey(workspaceId: string, fileName: string): string {
@@ -66,12 +78,27 @@ export class StorageService {
     return key;
   }
 
+  /**
+   * `fileName` forces the browser to download rather than render the object: customer-supplied
+   * HTML/SVG served inline from the storage origin could otherwise run script there.
+   */
   async getSignedDownloadUrl(
     key: string,
     expiresInSeconds = 3600,
+    fileName?: string,
+    /** Sign for our own server to fetch (internal address) instead of for a browser/provider. */
+    forServer = false,
   ): Promise<string> {
-    const command = new GetObjectCommand({ Bucket: this.bucket, Key: key });
-    return getSignedUrl(this.client, command, { expiresIn: expiresInSeconds });
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ...(fileName && {
+        ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      }),
+    });
+    return getSignedUrl(forServer ? this.client : this.signingClient, command, {
+      expiresIn: expiresInSeconds,
+    });
   }
 
   async getSignedUploadUrl(
@@ -84,6 +111,8 @@ export class StorageService {
       Key: key,
       ContentType: mimeType,
     });
-    return getSignedUrl(this.client, command, { expiresIn: expiresInSeconds });
+    return getSignedUrl(this.signingClient, command, {
+      expiresIn: expiresInSeconds,
+    });
   }
 }

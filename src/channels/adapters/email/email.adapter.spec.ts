@@ -46,6 +46,39 @@ describe('EmailAdapter.handleWebhook', () => {
     });
   });
 
+  it('carries sanitized html in the message metadata and maps stored attachments', async () => {
+    const [event] = await adapter.handleWebhook(
+      {
+        messageId: '<c@x>',
+        fromAddress: 'a@x.com',
+        subject: 'Invoice',
+        text: 'See attached',
+        html: '<p>See attached</p>',
+        sentAt: '2026-10-20T10:00:00Z',
+        attachments: [
+          {
+            storageKey: 'workspaces/w/1.pdf',
+            mimeType: 'application/pdf',
+            fileName: 'inv.pdf',
+            size: 12,
+          },
+        ],
+      },
+      connection,
+    );
+    expect(event).toMatchObject({
+      messageMetadata: { subject: 'Invoice', html: '<p>See attached</p>' },
+      attachments: [
+        {
+          storageKey: 'workspaces/w/1.pdf',
+          mimeType: 'application/pdf',
+          fileName: 'inv.pdf',
+          size: 12,
+        },
+      ],
+    });
+  });
+
   it('prefers the sender-provided display name', async () => {
     const [event] = await adapter.handleWebhook(
       {
@@ -112,6 +145,37 @@ describe('EmailAdapter.sendMessage', () => {
     await expect(send(jest.fn().mockRejectedValue(timeout))).rejects.toBe(
       timeout,
     );
+  });
+
+  it('sends an attachment, fetching it from the server-internal URL', async () => {
+    const sendMail = jest.fn().mockResolvedValue({ messageId: '<out2@x>' });
+    (clients.createSmtpTransport as jest.Mock).mockResolvedValue({
+      sendMail,
+      close: jest.fn(),
+    });
+    await adapter.sendMessage(
+      connection,
+      { id: 'c', externalConversationId: 'ann@x.com', contactExternalId: '' },
+      {
+        type: MessageType.DOCUMENT,
+        attachment: {
+          url: 'https://public/x',
+          internalUrl: 'http://minio:9000/x',
+          mimeType: 'application/pdf',
+          fileName: 'inv.pdf',
+        },
+      },
+    );
+    expect(sendMail.mock.calls[0][0]).toMatchObject({
+      text: '',
+      attachments: [
+        {
+          filename: 'inv.pdf',
+          path: 'http://minio:9000/x',
+          contentType: 'application/pdf',
+        },
+      ],
+    });
   });
 
   it('refuses non-text messages', async () => {

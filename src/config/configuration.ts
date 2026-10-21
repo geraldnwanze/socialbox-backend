@@ -51,6 +51,9 @@ export default () => ({
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
     bucket: process.env.R2_BUCKET ?? 'socialbox-media',
     endpoint: process.env.R2_ENDPOINT,
+    // Hostname browsers can reach, when the server talks to storage on an internal address (e.g.
+    // Docker's http://minio:9000). Only used to sign URLs handed to clients.
+    publicEndpoint: process.env.R2_PUBLIC_ENDPOINT,
   },
 
   whatsapp: {
