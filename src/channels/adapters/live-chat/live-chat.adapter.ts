@@ -47,9 +47,10 @@ export interface LiveChatWidgetConfig {
   greeting: string;
   color: string;
   allowedOrigins: string[];
-  /** Pre-chat form: ask the visitor for these before their first message. */
+  /** Pre-chat form: the name is optional to collect; the email is always required. */
   askName: boolean;
-  askEmail: boolean;
+  /** Always true: the email is mandatory so every chat can be followed up. */
+  askEmail: true;
   offlineMessage: string;
   hours: LiveChatHours;
 }
@@ -153,7 +154,7 @@ export class LiveChatAdapter implements ChannelAdapter {
       color,
       allowedOrigins: [...new Set(allowedOrigins)],
       askName: flag(input.askName),
-      askEmail: flag(input.askEmail),
+      askEmail: true,
       offlineMessage: str(input.offlineMessage, DEFAULTS.offlineMessage, 300),
       hours,
     };

@@ -133,7 +133,7 @@ export const WIDGET_SCRIPT = String.raw`(function () {
       return inputEl;
     }
     if (state.config.askName) nameInput = field('Your name', 'text', true);
-    if (state.config.askEmail) emailInput = field('Your email', 'email', true);
+    emailInput = field('Your email', 'email', true);
     var preErr = document.createElement('div');
     preErr.className = 'err';
     var preGo = document.createElement('button');
@@ -148,7 +148,7 @@ export const WIDGET_SCRIPT = String.raw`(function () {
         name: nameInput ? nameInput.value.trim() : undefined,
         email: emailInput ? emailInput.value.trim() : undefined
       };
-      if ((nameInput && !profile.name) || (emailInput && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email))) {
+      if ((nameInput && !profile.name) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email)) {
         preErr.textContent = 'Please fill in the details above.';
         return;
       }
@@ -231,7 +231,7 @@ export const WIDGET_SCRIPT = String.raw`(function () {
 
   function needsProfile() {
     var c = state.config;
-    return (c.askName || c.askEmail) && !state.profile && state.server.length === 0 && state.pending.length === 0;
+    return !(state.profile && state.profile.email) && (c.askName || c.askEmail);
   }
 
   function addFiles(node, files) {

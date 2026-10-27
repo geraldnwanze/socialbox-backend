@@ -117,7 +117,7 @@ export class WidgetService {
       greeting: config.greeting,
       color: config.color,
       askName: config.askName ?? false,
-      askEmail: config.askEmail ?? false,
+      askEmail: true,
       offlineMessage: config.offlineMessage ?? '',
       online: isWithinHours(config.hours),
     };
@@ -336,6 +336,14 @@ export class WidgetService {
       );
     }
 
+    // Every chat is tied to a reachable email so a reply is possible after the visitor leaves.
+    const profile = cleanProfile(input.name, input.email);
+    if (!profile?.email) {
+      throw new BadRequestException(
+        'A valid email address is required to chat with us',
+      );
+    }
+
     const attachments: LiveChatInboundPayload['attachments'] = [];
     if (file) {
       const fileName = cleanFileName(file.originalname);
@@ -365,7 +373,7 @@ export class WidgetService {
       messageId: input.id,
       text,
       visitor: { ...visitor, pageUrl: sanitizePageUrl(input.pageUrl) },
-      profile: cleanProfile(input.name, input.email),
+      profile,
       ...(attachments.length && { attachments }),
     };
     // Same idempotent ingest + queue path every provider webhook uses: a retried POST with the

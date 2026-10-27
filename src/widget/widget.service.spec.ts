@@ -96,6 +96,7 @@ describe('WidgetService', () => {
       {
         id: 'client-msg-1',
         text: '  hello  ',
+        email: 'Wendy@Example.com',
         pageUrl: 'https://shop.example.com/cart?x=1#frag',
       },
       { ip: '8.8.8.8', countryCode: 'US' },
@@ -108,6 +109,7 @@ describe('WidgetService', () => {
         visitorId: 'v-1',
         messageId: 'client-msg-1',
         text: 'hello',
+        profile: { email: 'wendy@example.com' },
         visitor: {
           ip: '8.8.8.8',
           countryCode: 'US',
@@ -125,10 +127,28 @@ describe('WidgetService', () => {
     await service.sendMessage(session, {
       id: 'client-msg-2',
       text: 'hi',
+      email: 'w@example.com',
       pageUrl: 'javascript:alert(1)',
     });
 
     expect(webhooks.ingest.mock.calls[0][2].visitor.pageUrl).toBeUndefined();
+  });
+
+  it('refuses a message without a valid email (every chat must be reachable)', async () => {
+    const { service, webhooks } = build(connection([]));
+    const session = { visitorId: 'v-1', connection: connection([]) as never };
+
+    await expect(
+      service.sendMessage(session, { id: 'client-msg-3', text: 'hi' }),
+    ).rejects.toThrow('email');
+    await expect(
+      service.sendMessage(session, {
+        id: 'client-msg-4',
+        text: 'hi',
+        email: 'not-an-email',
+      }),
+    ).rejects.toThrow('email');
+    expect(webhooks.ingest).not.toHaveBeenCalled();
   });
 
   describe('delivery and read status', () => {

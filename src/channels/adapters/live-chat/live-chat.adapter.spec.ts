@@ -15,7 +15,13 @@ describe('LiveChatAdapter', () => {
         title: 'Chat with us',
         color: '#4F46E5',
         allowedOrigins: [],
+        askEmail: true,
       });
+    });
+
+    it('always requires the email, whatever the settings say', async () => {
+      const result = await adapter.connect({ askEmail: 'false' });
+      expect(result.metadata?.askEmail).toBe(true);
     });
 
     it('keeps the previous key on reconnect so embedded snippets keep working', async () => {
